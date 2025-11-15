@@ -6,7 +6,7 @@
               "gap_tolerance_ohlcvs_minutes": 120,
               "max_warmup_minutes": 0,
               "start_date": "2020-01-15",
-              "starting_balance": 100000,
+              "starting_balance": 1000,
               "use_btc_collateral": true},
  "bot": {"long": {"close_grid_markup_end": 0.006144,
                   "close_grid_markup_start": 0.00572,
