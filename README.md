@@ -12,8 +12,8 @@ This repository is a Windows-optimised fork of [enarjord/passivbot](https://gith
 It keeps behaviour compatible with upstream while improving:
 
 - Rust extension handling on Windows (recognises `.pyd`/`.dll` builds from `maturin` and avoids unnecessary recompilations).
-- Hyperliquid OHLCV fetching by calling the native `candleSnapshot` API and caching daily data under `historical_data/ohlcvs_hyperliquid`.
-- Example configs and defaults for Windows backtesting (see `configs/test_hyperliquid_btc_aggressive.json` and `configs/test_multi_btc_aggressive.json`).
+- Hyperliquid OHLCV fetching by calling the native `candleSnapshot` API and caching daily data under `historical_data/ohlcvs_hyperliquid`, with ready-made configs for Hyperliquid-focused backtesting.
+- Example configs and defaults for Windows backtesting (see `configs/test_hyperliquid_btc_aggressive.json` for Hyperliquid and `configs/test_multi_btc_aggressive.json` for multi-exchange BTC).
 
 ## Overview
 
