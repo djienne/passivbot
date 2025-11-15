@@ -3,6 +3,7 @@ import re
 import os
 
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import pandas as pd
 import numpy as np
 import time
@@ -504,6 +505,15 @@ def plot_fills_forager(
             ]
         )
     ax.legend(legend)
+
+    # Format x-axis as datetime with reasonable tick density
+    try:
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+        plt.gcf().autofmt_xdate()
+    except Exception:
+        # If index is not datetime-compatible, fall back silently
+        pass
     return plt
 
 

@@ -46,6 +46,7 @@ from pathlib import Path
 from plotting import plot_fills_forager
 from collections import defaultdict
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import logging
 from main import manage_rust_compilation
 import gzip
@@ -665,18 +666,42 @@ def plot_forager(
         bal_eq_dt = bal_eq
 
     plt.clf()
-    bal_eq_dt[["balance", "equity"]].plot(logy=False)
+    ax = bal_eq_dt[["balance", "equity"]].plot(logy=False)
+    try:
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+        plt.gcf().autofmt_xdate()
+    except Exception:
+        pass
     plt.savefig(oj(results_path, "balance_and_equity.png"))
     plt.clf()
-    bal_eq_dt[["balance", "equity"]].plot(logy=True)
+    ax = bal_eq_dt[["balance", "equity"]].plot(logy=True)
+    try:
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+        plt.gcf().autofmt_xdate()
+    except Exception:
+        pass
     plt.savefig(oj(results_path, "balance_and_equity_logy.png"))
     plt.clf()
     if bool(require_config_value(config, "backtest.use_btc_collateral")):
         plt.clf()
-        bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=False)
+        ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=False)
+        try:
+            ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+            plt.gcf().autofmt_xdate()
+        except Exception:
+            pass
         plt.savefig(oj(results_path, "balance_and_equity_btc.png"))
         plt.clf()
-        bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=True)
+        ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=True)
+        try:
+            ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+            plt.gcf().autofmt_xdate()
+        except Exception:
+            pass
         plt.savefig(oj(results_path, "balance_and_equity_btc_logy.png"))
 
     if not config["disable_plotting"]:
