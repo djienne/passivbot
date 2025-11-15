@@ -46,10 +46,10 @@ This fork is tuned for Windows. The steps below assume PowerShell on Windows 10/
 
 ### 1. Clone the Repository
 
-Open PowerShell, then clone this Windows-optimised fork (replace `<your-fork-url>` with your fork URL):
+Open PowerShell, then clone this Windows-optimised fork:
 
 ```powershell
-git clone <your-fork-url> passivbot
+git clone git@github.com:djienne/passivbot.git passivbot
 cd passivbot
 ```
 
