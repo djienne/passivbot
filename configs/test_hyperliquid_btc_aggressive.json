@@ -12,8 +12,8 @@
   },
   "live": {
     "approved_coins": {
-      "long": ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE"],
-      "short": ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE"]
+      "long": ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC"],
+      "short": ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "ADA", "AVAX", "LINK", "LTC"]
     },
     "auto_gs": true,
     "empty_means_all_approved": true,
