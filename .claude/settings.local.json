@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source venv/Scripts/activate)",
+      "Bash(pip install:*)",
+      "Bash(rm:*)",
+      "Bash(py -3.12 -m venv:*)",
+      "Bash(py --list:*)",
+      "Bash(choco install:*)",
+      "Bash(py -3.10 -m venv:*)",
+      "WebSearch",
+      "WebFetch(domain:hyperliquid.gitbook.io)",
+      "WebFetch(domain:docs.chainstack.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(python:*)",
+      "Bash(dir:*)",
+      "Bash(maturin develop:*)",
+      "Bash(cat:*)",
+      "Bash(cmd /c \"cd /d C:\\Users\\david\\Desktop\\passivbot && venv\\Scripts\\activate && python src\\backtest.py configs\\test_hyperliquid_btc.json\")",
+      "Bash(./venv/Scripts/python.exe:*)",
+      "Bash(nul)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

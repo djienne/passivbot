@@ -6,6 +6,14 @@
 
 v7.4.4
 
+## Fork & Windows Optimizations
+
+This repository is a Windows-optimised fork of [enarjord/passivbot](https://github.com/enarjord/passivbot) based on v7.4.4.  
+It keeps behaviour compatible with upstream while improving:
+
+- Rust extension handling on Windows (recognises `.pyd`/`.dll` builds from `maturin` and avoids unnecessary recompilations).
+- Hyperliquid OHLCV fetching by calling the native `candleSnapshot` API and caching daily data under `historical_data/ohlcvs_hyperliquid`.
+- Example configs and defaults for Windows backtesting (see `configs/test_hyperliquid_btc_aggressive.json` and `configs/test_multi_btc_aggressive.json`).
 
 ## Overview
 
@@ -32,102 +40,102 @@ The Forager feature dynamically chooses the most volatile markets on which to op
 ### Unstucking Mechanism
 Passivbot manages underperforming, or "stuck", positions by realizing small losses over time. If multiple positions are stuck, the bot prioritizes positions with the smallest gap between the entry price and current market price for "unstucking". Losses are limited by ensuring that the account balance does not fall under a set percentage below the past peak balance.  
 
-## Installation
+## Installation (Windows Only)
 
-To install Passivbot and its dependencies, follow the steps below.
+This fork is tuned for Windows. The steps below assume PowerShell on Windows 10/11.
 
-### Step 1: Clone the Repository
+### 1. Clone the Repository
 
-First, clone the Passivbot repository to the local machine:
+Open PowerShell, then clone this Windows-optimised fork (replace `<your-fork-url>` with your fork URL):
 
-```sh
-git clone https://github.com/enarjord/passivbot.git
+```powershell
+git clone <your-fork-url> passivbot
 cd passivbot
 ```
 
+The original upstream project lives at: https://github.com/enarjord/passivbot.
 
-### Step 2: Install Rust
-Passivbot uses Rust for some of its components. Install Rust by following these steps:
+### 2. Install Python 3.10 with Chocolatey
 
-Visit https://www.rust-lang.org/tools/install
-Follow the instructions to install Rustup, the Rust installer and version management tool.
-After installation, restart the terminal or command prompt.
+Run PowerShell **as Administrator**, `cd` into the `passivbot` directory, then:
 
-### Step 3: Create and Activate a Virtual Environment
+1. Install Chocolatey (if not already installed) following https://chocolatey.org/install.  
+2. Install Python 3.10.11 explicitly:
 
-Create a virtual environment to manage dependencies:
-
- **Linux/macOS:**
-```sh
-python3 -m venv venv
-```
-
- **Windows (Command Prompt or PowerShell):**
-```cmd
-python -m venv venv
-```
-
-Activate the virtual environment:
-
- **Linux/macOS:**
-```sh
-source venv/bin/activate
-```
-
- **Windows (Command Prompt):**
-```cmd
-venv\Scripts\activate
-```
-
- **Windows (PowerShell):**
 ```powershell
+choco install python --version=3.10.11 --allow-downgrade -y
+```
+
+Close and reopen PowerShell (non-admin is fine), then verify:
+
+```powershell
+py -3.10 --version
+```
+
+### 3. Create and Activate a 3.10 Virtual Environment
+
+From the repository root:
+
+```powershell
+py -3.10 -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-### Step 4: Install Python Dependencies
+You should see `(venv)` in your prompt.
 
-Install all the required Python dependencies listed in the `requirements.txt` file:
+### 4. Install Python Dependencies
 
-```sh
-pip install -r requirements.txt
+With the venv active, install dependencies for this fork:
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-### Step 5 (optional): Build Rust Extensions
+### 5. Install Rust and Build the Rust Extension
 
-Passivbot will attempt to build the necessary Rust extensions automatically, but they can also be built manually by navigating to the `passivbot-rust` directory and using `maturin`:
+Passivbot uses Rust (via `maturin`) for high‑performance backtesting.
 
-```sh
+1. Install Rust using rustup (https://www.rust-lang.org/tools/install), then restart your terminal so `cargo` is on `PATH`.
+2. Build the Rust extension inside the venv:
+
+```powershell
 cd passivbot-rust
 maturin develop --release
 cd ..
 ```
 
-If changes in the Rust source are detected, recompilation is needed, which Passivbot will attempt to do automatically when starting. To manually recompile, use the commands given above.
+On Windows, this produces a `.pyd` in the venv; the fork’s startup logic recognises it and skips redundant recompiles.
 
-### Step 6: Add API keys
+### 6. Add API Keys
 
-Make a copy of the api-keys template file:
+Copy the example file and fill in your keys (only needed for live trading; backtesting and optimisation do not require API credentials):
 
-```sh
-cp api-keys.json.example api-keys.json
+```powershell
+Copy-Item api-keys.json.example api-keys.json
 ```
 
-Add your keys to api-keys.json.
+Edit `api-keys.json` with your exchange credentials.
 
-### Step 7: Run Passivbot
+### 7. Sanity Check: BTC Long Backtest
 
-To start the bot with the default settings, run:
+Run a multi‑year BTC futures backtest on Binance/Bybit to confirm everything is working:
 
-```sh
-python3 src/main.py -u {account_name_from_api-keys.json}
+```powershell
+python .\src\backtest.py .\configs\examples\btc_long.json --disable_plotting
 ```
 
-or make a new configuration file, using `configs/template.json` as a template, and start the bot with:
+This uses the `configs/examples/btc_long.json` strategy (long‑only BTC grid/trailing system) and will download or reuse 1m OHLCV from Binance and Bybit, writing results under `backtests/`.
 
+### 8. Hyperliquid BTC Backtest & Data Collection
 
-```sh
-python3 src/main.py path/to/config.json
+To exercise the Hyperliquid integration and start accumulating local HL history:
+
+```powershell
+python .\src\backtest.py .\configs\test_hyperliquid_btc_aggressive.json
 ```
+
+This runs an aggressive BTC strategy on Hyperliquid, fetching 1m candles via the native `candleSnapshot` API and caching them under `historical_data/ohlcvs_hyperliquid/BTC/`. Re‑running this command every few days will gradually build a longer local HL dataset within the exchange’s ~3.5‑day API window.
 
 ### Logging
 
@@ -139,6 +147,12 @@ Passivbot uses Python's logging module throughout the bot, backtester, and suppo
 ### Running Multiple Bots
 
 Running several Passivbot instances against the same exchange on one machine is supported. Each process shares the same on-disk OHLCV cache, and the candlestick manager now uses short-lived, self-healing locks with automatic stale cleanup so that one stalled process cannot block the rest. No manual deletion of lock files is required; the bot removes stale locks on startup and logs whenever a lock acquisition times out.
+
+## Hyperliquid Data & Backtesting (Windows Fork)
+
+- Hyperliquid 1m candles are fetched via the native `candleSnapshot` API and cached as daily `.npy` files under `historical_data/ohlcvs_hyperliquid/<COIN>/YYYY-MM-DD.npy`.
+- Backtests that include `hyperliquid` in `backtest.exchanges` (for example `configs/test_hyperliquid_btc_aggressive.json`) automatically download any missing Hyperliquid days before running.
+- Hyperliquid only exposes ~3.5 days of 1m history; run either the Hyperliquid backtest or `python src/tools/download_hyperliquid_data.py --coins BTC ETH SOL HYPE --days-back 3` regularly (every 2–3 days) to accumulate long-term local history.
 
 ## Jupyter Lab
 

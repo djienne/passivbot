@@ -15,8 +15,11 @@ LOCK_CHECK_INTERVAL = 2  # Check every 2 seconds
 
 def get_compiled_extension_paths():
     possible_extensions = ["so", "dylib", "dll", "pyd", "", "bundle", "sl"]
+    # Support both Unix-style (libpassivbot_rust.*) and Windows-style (passivbot_rust.*)
+    base_names = [COMPILED_EXTENSION_NAME, "passivbot_rust"]
     return [
-        os.path.join(RUST_SOURCE_DIR, "target", "release", f"{COMPILED_EXTENSION_NAME}.{ext}")
+        os.path.join(RUST_SOURCE_DIR, "target", "release", f"{base}.{ext}")
+        for base in base_names
         for ext in possible_extensions
     ]
 

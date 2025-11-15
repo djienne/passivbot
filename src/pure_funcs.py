@@ -1768,6 +1768,7 @@ def analyze_fills_multi(sdf, fdf, params):
     stuck_time_ratio_short = len(is_stuck_short[is_stuck_short.any(axis=1)]) / len(is_stuck_short)
     stuck_time_ratio_any = len(any_stuck[any_stuck]) / len(any_stuck)
     eqbal_ratios = sdf.equity / sdf.balance
+    pnl_ratio_long_short = pnl_long / pnl_sum if pnl_sum != 0.0 else 0.5
     analysis = {
         "n_days": n_days,
         "starting_balance": starting_balance,
@@ -1785,7 +1786,7 @@ def analyze_fills_multi(sdf, fdf, params):
         "pnl_sum": pnl_sum,
         "pnl_long": pnl_long,
         "pnl_short": pnl_short,
-        "pnl_ratio_long_short": pnl_long / pnl_sum,
+        "pnl_ratio_long_short": pnl_ratio_long_short,
         "sum_profit_long": sum_profit_long,
         "sum_profit_short": sum_profit_short,
         "sum_loss_long": sum_loss_long,
@@ -1819,6 +1820,7 @@ def analyze_fills_multi(sdf, fdf, params):
         loss_profit_ratio_short = (
             abs(sum_loss_short) / sum_profit_short if sum_profit_short > 0.0 else 1.0
         )
+        pnl_ratio_long_short_symbol = pnl_long / pnl_sum if pnl_sum != 0.0 else 0.5
 
         stuck_l = is_stuck_long[f"{symbol}_WE_l"]
         stuck_time_ratio_long = len(stuck_l[stuck_l]) / len(stuck_l)
@@ -1827,7 +1829,7 @@ def analyze_fills_multi(sdf, fdf, params):
 
         analysis["individual_analyses"][symbol] = {
             "pnl_ratio": pnl_sum / pnl_sum_total,
-            "pnl_ratio_long_short": pnl_long / pnl_sum,
+            "pnl_ratio_long_short": pnl_ratio_long_short_symbol,
             "pnl_long": pnl_long,
             "pnl_short": pnl_short,
             "sum_profit_long": sum_profit_long,

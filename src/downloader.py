@@ -577,7 +577,15 @@ class OHLCVManager:
         if missing_days:
             await self.download_ohlcvs(coin)
         ohlcvs = await self.load_ohlcvs_from_cache(coin)
-        ohlcvs.volume = ohlcvs.volume * ohlcvs.close  # use quote volume
+        # If nothing was loaded, return an empty frame with the expected schema
+        if ohlcvs is None or ohlcvs.empty:
+            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+        # Ensure we have a volume column before attempting to rescale it
+        if "volume" not in ohlcvs.columns:
+            ohlcvs["volume"] = 0.0
+        else:
+            # Use quote volume
+            ohlcvs["volume"] = ohlcvs["volume"] * ohlcvs["close"]
         return ohlcvs
 
     async def get_start_date_modified(self, coin):
@@ -610,6 +618,10 @@ class OHLCVManager:
             if self.cc is None:
                 self.load_cc()
             await self.download_ohlcvs_gateio(coin)
+        elif self.exchange == "hyperliquid":
+            if self.cc is None:
+                self.load_cc()
+            await self.download_ohlcvs_hyperliquid(coin)
 
     def dump_ohlcvs_to_cache(self, coin):
         """
@@ -649,6 +661,9 @@ class OHLCVManager:
             return fts
         elif self.exchange == "bitget":
             fts = await self.find_first_day_bitget(coin)
+            return fts
+        elif self.exchange == "hyperliquid":
+            fts = await self.find_first_day_hyperliquid(coin)
             return fts
         if ohlcvs:
             fts = ohlcvs[0][0]
@@ -1257,6 +1272,195 @@ class OHLCVManager:
             dump_ohlcv_data(ensure_millis(df_day), fpath)
             if self.verbose:
                 logging.info(f"gateio Dumped daily OHLCV data for {symbol} to {fpath}")
+
+    async def download_ohlcvs_hyperliquid(self, coin: str):
+        """
+        Download OHLCV data from Hyperliquid API.
+
+        Note: Hyperliquid only provides the most recent ~5000 candles (~3.5 days).
+        This method downloads available data for the requested date range using
+        Hyperliquid's native candleSnapshot endpoint (direct HTTP), instead of
+        going through ccxt.fetch_ohlcv. This avoids incompatibilities between
+        ccxt and the upstream API while keeping the on-disk format unchanged.
+        """
+        missing_days = await self.get_missing_days_ohlcvs(coin)
+        if not missing_days:
+            return
+
+        dirpath = make_get_filepath(os.path.join(self.cache_filepaths["ohlcvs"], coin, ""))
+
+        # Hyperliquid only provides ~5000 candles, so warn if trying to go back too far
+        now_ms = int(utc_ms())
+        max_lookback_ms = 5000 * 60 * 1000  # ~3.5 days
+        earliest_available_ts = now_ms - max_lookback_ms
+
+        # Filter missing days to only those within available range
+        available_days = []
+        for day in missing_days:
+            day_ts = date_to_ts(day)
+            if day_ts >= earliest_available_ts:
+                available_days.append(day)
+            else:
+                if self.verbose:
+                    logging.info(
+                        f"hyperliquid {coin} {day}: Beyond API limit (~3.5 days), skipping"
+                    )
+
+        if not available_days:
+            if self.verbose:
+                logging.info(
+                    f"hyperliquid {coin}: All requested days beyond API limit, skipping"
+                )
+            return
+
+        # Download days
+        tasks = []
+        for day in available_days:
+            await self.check_rate_limit()
+            tasks.append(
+                asyncio.create_task(
+                    self.fetch_and_save_day_hyperliquid(coin, day, dirpath)
+                )
+            )
+        for task in tasks:
+            await task
+
+    async def fetch_and_save_day_hyperliquid(self, coin: str, day: str, dirpath: str):
+        """
+        Fetch one full day of OHLCV data for a given coin from Hyperliquid via
+        its /info candleSnapshot endpoint and save it to disk as a .npy file.
+        """
+        fpath = os.path.join(dirpath, f"{day}.npy")
+        start_ts_day = int(date_to_ts(day))
+        end_ts_day = start_ts_day + 24 * 60 * 60 * 1000
+        interval = "1m"
+
+        payload = {
+            "type": "candleSnapshot",
+            "req": {
+                "coin": coin,
+                "interval": interval,
+                "startTime": start_ts_day,
+                "endTime": end_ts_day,
+            },
+        }
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    "https://api.hyperliquid.xyz/info",
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    if resp.status != 200:
+                        try:
+                            error_text = await resp.text()
+                        except Exception:
+                            error_text = "<no body>"
+                        logging.error(
+                            f"hyperliquid API error for {coin} {day}: "
+                            f"status {resp.status}, response: {error_text}"
+                        )
+                        return
+                    data = await resp.json()
+        except Exception as e:
+            logging.error(f"hyperliquid Error fetching {coin} {day}: {e}")
+            traceback.print_exc()
+            return
+
+        if not isinstance(data, list) or not data:
+            if self.verbose:
+                logging.info(f"hyperliquid {coin} {day}: No data returned")
+            return
+
+        # Convert API response to DataFrame in Passivbot's standard OHLCV format
+        try:
+            df_day = pd.DataFrame(
+                [
+                    {
+                        "timestamp": float(c["t"]),
+                        "open": float(c["o"]),
+                        "high": float(c["h"]),
+                        "low": float(c["l"]),
+                        "close": float(c["c"]),
+                        "volume": float(c.get("v", 0.0)),
+                    }
+                    for c in data
+                ]
+            )
+        except Exception as e:
+            logging.error(f"hyperliquid {coin} {day}: Failed to parse candles: {e}")
+            traceback.print_exc()
+            return
+
+        df_day = ensure_millis(df_day)
+        df_day = df_day.sort_values("timestamp").reset_index(drop=True)
+        # Filter to exact day range
+        df_day = df_day[
+            (df_day.timestamp >= start_ts_day) & (df_day.timestamp < end_ts_day)
+        ].reset_index(drop=True)
+
+        # Require a complete day with 1440 one-minute candles and no large gaps
+        if len(df_day) != 1440:
+            if self.verbose:
+                logging.warning(
+                    f"hyperliquid {coin} {day}: Incomplete day "
+                    f"({len(df_day)}/1440 candles), skipping"
+                )
+            return
+
+        intervals = np.diff(df_day["timestamp"].values)
+        if len(intervals) and not (intervals == 60000).all():
+            max_gap = int(intervals.max() / 60000)
+            logging.warning(
+                f"hyperliquid {coin} {day}: Gaps detected (max gap: {max_gap} minutes), skipping"
+            )
+            return
+
+        try:
+            dump_ohlcv_data(df_day, fpath)
+            if self.verbose:
+                logging.info(f"hyperliquid {coin} {day}: Saved {len(df_day)} candles to {fpath}")
+        except Exception as e:
+            logging.error(f"hyperliquid {coin} {day}: Error saving data: {e}")
+
+    async def find_first_day_hyperliquid(self, coin: str):
+        """
+        Find the first available timestamp for a coin on Hyperliquid.
+
+        Note: Hyperliquid only provides ~5000 candles, so this returns the
+        earliest timestamp currently available via API (~3.5 days ago).
+        """
+        symbol = self.get_symbol(coin)
+
+        try:
+            # Fetch the oldest available data
+            now_ms = int(utc_ms())
+            lookback_ms = 5000 * 60 * 1000  # ~5000 1-minute candles
+            start_ts = now_ms - lookback_ms
+
+            ohlcvs = await self.cc.fetch_ohlcv(
+                symbol, timeframe="1m", since=start_ts, limit=5000
+            )
+
+            if ohlcvs and len(ohlcvs) > 0:
+                fts = ohlcvs[0][0]
+                if self.verbose:
+                    logging.info(
+                        f"hyperliquid Found first timestamp for {coin}: "
+                        f"{ts_to_date(fts)} ({fts})"
+                    )
+                self.dump_first_timestamp(coin, fts)
+                return fts
+        except Exception as e:
+            logging.error(f"hyperliquid Error finding first timestamp for {coin}: {e}")
+            traceback.print_exc()
+
+        # Default to 0 if unable to fetch
+        fts = 0.0
+        self.dump_first_timestamp(coin, fts)
+        return fts
 
     def load_first_timestamp(self, coin):
         if os.path.exists(self.cache_filepaths["first_timestamps"]):

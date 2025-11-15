@@ -146,11 +146,38 @@ def process_forager_fills(fills, coins, hlcvs, equities, equities_btc):
         pnls[pside] = profit + loss
         analysis_appendix[f"loss_profit_ratio_{pside}"] = abs(loss / profit)
     div_by = 60  # save some disk space. Set to 1 to dump uncropped
-    analysis_appendix["pnl_ratio_long_short"] = pnls["long"] / (pnls["long"] + pnls["short"])
+    total_pnl = pnls["long"] + pnls["short"]
+    analysis_appendix["pnl_ratio_long_short"] = (
+        pnls["long"] / total_pnl if total_pnl != 0.0 else 0.5
+    )
     bdf = fdf.groupby((fdf.minute // div_by) * div_by).balance.last()
     bbdf = fdf.groupby((fdf.minute // div_by) * div_by).balance_btc.last()
     edf = pd.Series(equities).iloc[::div_by]
     ebdf = pd.Series(equities_btc).iloc[::div_by]
+    # Handle cases with no or few fills/equity points gracefully
+    if bdf.empty and edf.empty:
+        bal_eq = pd.DataFrame(
+            columns=["balance", "equity", "balance_btc", "equity_btc"]
+        ).astype(float)
+        return fdf, sort_dict_keys(analysis_appendix), bal_eq
+    if bdf.empty:
+        idx = np.arange(0, len(edf) * div_by, div_by)
+        edf.index = idx
+        ebdf.index = idx
+        bal_eq = pd.DataFrame(
+            {"balance": edf, "equity": edf, "balance_btc": ebdf, "equity_btc": ebdf},
+            index=idx,
+        ).astype(float)
+        return fdf, sort_dict_keys(analysis_appendix), bal_eq
+    if edf.empty:
+        idx = bdf.index
+        bbdf = bbdf.reindex(idx)
+        bal_eq = pd.DataFrame(
+            {"balance": bdf, "equity": bdf, "balance_btc": bbdf, "equity_btc": bbdf},
+            index=idx,
+        ).astype(float).ffill().bfill()
+        return fdf, sort_dict_keys(analysis_appendix), bal_eq
+
     nidx = np.arange(min(bdf.index[0], edf.index[0]), max(bdf.index[-1], edf.index[-1]), div_by)
     bal_eq = (
         pd.DataFrame(
