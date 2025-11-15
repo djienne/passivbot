@@ -435,7 +435,12 @@ def plot_pnls_stuck(sdf, fdf, symbol=None, start_pct=0.0, end_pct=1.0, unstuck_t
 
 
 def plot_fills_forager(
-    fdf: pd.DataFrame, hlcvs_df: pd.DataFrame, start_pct=0.0, end_pct=1.0, whole=False
+    fdf: pd.DataFrame,
+    hlcvs_df: pd.DataFrame,
+    timestamps,
+    start_pct=0.0,
+    end_pct=1.0,
+    whole=False,
 ):
     plt.clf()
     if len(fdf) == 0:
@@ -450,6 +455,18 @@ def plot_fills_forager(
     end_minute = int(hlcc.index[0] + hlcc.index[-1] * end_pct)
     hlcc = hlcc.loc[start_minute:end_minute]
     fdfc = fdfc.loc[start_minute:end_minute]
+
+    # Map minute indices to datetimes if timestamps are provided
+    if timestamps is not None and len(timestamps) > 0:
+        ts_arr = np.asarray(timestamps)
+        idx_hlcc = hlcc.index.astype(int)
+        idx_fdfc = fdfc.index.astype(int)
+        idx_hlcc = np.clip(idx_hlcc, 0, len(ts_arr) - 1)
+        idx_fdfc = np.clip(idx_fdfc, 0, len(ts_arr) - 1)
+        hlcc = hlcc.copy()
+        fdfc = fdfc.copy()
+        hlcc.index = pd.to_datetime(ts_arr[idx_hlcc], unit="ms")
+        fdfc.index = pd.to_datetime(ts_arr[idx_fdfc], unit="ms")
     ax = hlcc.close.plot(style="y--")
     hlcc.low.plot(style="g--")
     hlcc.high.plot(style="g--")

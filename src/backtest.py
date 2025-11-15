@@ -603,6 +603,7 @@ def post_process(
     equities,
     equities_btc,
     btc_usd_prices,
+    timestamps,
     analysis,
     results_path,
     exchange,
@@ -637,6 +638,7 @@ def post_process(
         fdf,
         bal_eq,
         hlcvs,
+        timestamps,
     )
 
 
@@ -647,21 +649,34 @@ def plot_forager(
     fdf: pd.DataFrame,
     bal_eq,
     hlcvs,
+    timestamps,
 ):
     plots_dir = make_get_filepath(oj(results_path, "fills_plots", ""))
+
+    # Convert minute index to datetime if timestamps are available
+    if timestamps is not None and len(timestamps) > 0:
+        ts_arr = np.asarray(timestamps)
+        idx_minutes = bal_eq.index.astype(int)
+        idx_clamped = np.clip(idx_minutes, 0, len(ts_arr) - 1)
+        dt_index = pd.to_datetime(ts_arr[idx_clamped], unit="ms")
+        bal_eq_dt = bal_eq.copy()
+        bal_eq_dt.index = dt_index
+    else:
+        bal_eq_dt = bal_eq
+
     plt.clf()
-    bal_eq[["balance", "equity"]].plot(logy=False)
+    bal_eq_dt[["balance", "equity"]].plot(logy=False)
     plt.savefig(oj(results_path, "balance_and_equity.png"))
     plt.clf()
-    bal_eq[["balance", "equity"]].plot(logy=True)
+    bal_eq_dt[["balance", "equity"]].plot(logy=True)
     plt.savefig(oj(results_path, "balance_and_equity_logy.png"))
     plt.clf()
     if bool(require_config_value(config, "backtest.use_btc_collateral")):
         plt.clf()
-        bal_eq[["balance_btc", "equity_btc"]].plot(logy=False)
+        bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=False)
         plt.savefig(oj(results_path, "balance_and_equity_btc.png"))
         plt.clf()
-        bal_eq[["balance_btc", "equity_btc"]].plot(logy=True)
+        bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=True)
         plt.savefig(oj(results_path, "balance_and_equity_btc_logy.png"))
 
     if not config["disable_plotting"]:
@@ -671,10 +686,10 @@ def plot_forager(
                 hlcvs_df = pd.DataFrame(hlcvs[:, i, :3], columns=["high", "low", "close"])
                 fdfc = fdf[fdf.coin == coin]
                 plt.clf()
-                plot_fills_forager(fdfc, hlcvs_df)
+                plot_fills_forager(fdfc, hlcvs_df, timestamps)
                 plt.title(f"Fills {coin}")
-                plt.xlabel = "time"
-                plt.ylabel = "price"
+                plt.xlabel = "Datetime"
+                plt.ylabel = "Price"
                 plt.savefig(oj(plots_dir, f"{coin}.png"))
             except Exception as e:
                 logging.info(f"Error plotting {coin} {e}")
@@ -770,6 +785,7 @@ async def main():
             equities,
             equities_btc,
             btc_usd_prices,
+            timestamps,
             analysis,
             results_path,
             exchange,
@@ -796,6 +812,7 @@ async def main():
                 equities,
                 equities_btc,
                 btc_usd_prices,
+                timestamps,
                 analysis,
                 results_path,
                 exchange,
