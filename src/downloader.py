@@ -1303,13 +1303,15 @@ class OHLCVManager:
             else:
                 if self.verbose:
                     logging.info(
-                        f"hyperliquid {coin} {day}: Beyond API limit (~3.5 days), skipping"
+                        f"hyperliquid {coin} {day}: older than API's ~3.5-day window; "
+                        f"cannot download new data for this day"
                     )
 
         if not available_days:
             if self.verbose:
                 logging.info(
-                    f"hyperliquid {coin}: All requested days beyond API limit, skipping"
+                    f"hyperliquid {coin}: no missing days within API's ~3.5-day window; "
+                    f"no new OHLCV downloaded for this coin"
                 )
             return
 
@@ -1911,7 +1913,10 @@ async def _prepare_hlcvs_combined_impl(
             # Sort by coverage desc, gap_count asc, volume desc
             exchange_candidates.sort(key=lambda x: (x[2], -x[3], x[4]), reverse=True)
             best_exchange, best_df, best_cov, best_gaps, best_vol = exchange_candidates[0]
-        logging.info(f"{coin} exchange preference: {[x[0] for x in exchange_candidates]}")
+        logging.info(
+            f"{coin}: using {best_exchange} OHLCV "
+            f"(exchange preference, best first: {[x[0] for x in exchange_candidates]})"
+        )
 
         chosen_data_per_coin[coin] = best_df
         chosen_mss_per_coin[coin] = om_dict[best_exchange].get_market_specific_settings(coin)
