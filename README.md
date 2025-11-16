@@ -173,6 +173,30 @@ The Docker scheduler downloads data for 20 major coins (AAVE, ADA, AVAX, BCH, BN
 
 **Requirements:** Docker and Docker Compose installed on your system.
 
+### Running Live Bot with Docker
+
+For live trading, you can run the bot in a Docker container:
+
+```bash
+# Build the Docker image
+docker compose build
+
+# Start the live bot (runs in background)
+docker compose up -d
+
+# View logs
+docker logs -f passivbot-hype-live
+
+# Stop the bot
+docker compose down
+```
+
+The default configuration runs `configs/hype_dio.json`. To use a different config, edit the `command` line in `docker-compose.yml`.
+
+**Requirements:**
+- Docker and Docker Compose installed on your system
+- Valid API keys configured in `api-keys.json` (the config specifies which exchange user to use)
+
 ## Jupyter Lab
 
 Jupyter lab needs to be run in the same virtual environment as the bot. Activate venv (see installation instructions above, step 3), and launch Jupyter lab from the Passivbot root dir with:
