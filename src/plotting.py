@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import os
 
@@ -458,29 +459,40 @@ def plot_fills_forager(
     fdfc = fdfc.loc[start_minute:end_minute]
 
     # Map minute indices to datetimes if timestamps are provided
+    use_datetime_x_axis = False
     if timestamps is not None and len(timestamps) > 0:
         base_ts = int(np.asarray(timestamps)[0])
         idx_hlcc = hlcc.index.to_numpy(dtype="int64")
         idx_fdfc = fdfc.index.to_numpy(dtype="int64")
+
         hlcc = hlcc.copy()
         fdfc = fdfc.copy()
-        hlcc.index = pd.to_datetime(base_ts + idx_hlcc * 60_000, unit="ms")
-        fdfc.index = pd.to_datetime(base_ts + idx_fdfc * 60_000, unit="ms")
+        # Use the same conversion as equity plots: base_ts + minute_offset * 60_000
+        try:
+            hlcc.index = pd.to_datetime(base_ts + idx_hlcc * 60_000, unit="ms")
+            fdfc.index = pd.to_datetime(base_ts + idx_fdfc * 60_000, unit="ms")
+
+            # Verify conversion worked
+            if isinstance(hlcc.index, pd.DatetimeIndex) and isinstance(fdfc.index, pd.DatetimeIndex):
+                use_datetime_x_axis = True
+        except Exception as e:
+            logging.error(f"Failed to convert fills plot indices to datetime: {e}")
     ax = hlcc.close.plot(style="y--")
-    hlcc.low.plot(style="g--")
-    hlcc.high.plot(style="g--")
+    hlcc.low.plot(style="g--", ax=ax)
+    hlcc.high.plot(style="g--", ax=ax)
     longs = fdfc[fdfc.type.str.contains("long")]
     shorts = fdfc[fdfc.type.str.contains("short")]
     if len(longs) == 0 and len(shorts) == 0:
         return plt
     legend = ["close", "high", "low"]
+
     if len(longs) > 0:
         pprices_long = hlcc.join(longs[["pprice", "psize"]]).astype(float).ffill()
         pprices_long.loc[pprices_long.pprice.pct_change() != 0.0, "pprice"] = np.nan
         pprices_long = pprices_long[pprices_long.psize != 0.0].pprice
-        longs[longs.type.str.contains("entry")].price.plot(style="b.")
-        longs[longs.type.str.contains("close")].price.plot(style="r.")
-        pprices_long.plot(style="b|")
+        longs[longs.type.str.contains("entry")].price.plot(style="b.", ax=ax)
+        longs[longs.type.str.contains("close")].price.plot(style="r.", ax=ax)
+        pprices_long.plot(style="b|", ax=ax)
         legend.extend(
             [
                 "entries_long",
@@ -492,9 +504,9 @@ def plot_fills_forager(
         pprices_short = hlcc.join(shorts[["pprice", "psize"]]).astype(float).ffill()
         pprices_short.loc[pprices_short.pprice.pct_change() != 0.0, "pprice"] = np.nan
         pprices_short = pprices_short[pprices_short.psize != 0.0].pprice
-        shorts[shorts.type.str.contains("entry")].price.plot(style="mx")
-        shorts[shorts.type.str.contains("close")].price.plot(style="cx")
-        pprices_short.plot(style="r|")
+        shorts[shorts.type.str.contains("entry")].price.plot(style="mx", ax=ax)
+        shorts[shorts.type.str.contains("close")].price.plot(style="cx", ax=ax)
+        pprices_short.plot(style="r|", ax=ax)
         legend.extend(
             [
                 "entries_short",
@@ -504,17 +516,13 @@ def plot_fills_forager(
         )
     ax.legend(legend)
 
-    # Format x-axis as datetime with reasonable tick density
-    try:
-        if isinstance(hlcc.index, pd.DatetimeIndex):
-            locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
-            formatter = mdates.ConciseDateFormatter(locator)
-            ax.xaxis.set_major_locator(locator)
-            ax.xaxis.set_major_formatter(formatter)
-            plt.gcf().autofmt_xdate()
-    except Exception:
-        # Fall back silently if any issues
-        pass
+    # Pandas automatically formats datetime indices, so we only need to rotate labels
+    if use_datetime_x_axis:
+        try:
+            plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+            plt.tight_layout()
+        except Exception as e:
+            logging.warning(f"Could not format fills plot x-axis labels: {e}")
     return plt
 
 
