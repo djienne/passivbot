@@ -206,7 +206,7 @@ python3 -m jupyter lab
 
 ## Requirements
 
-- Python >= 3.8
+- Python 3.10 (recommended; this Windows fork is optimized for 3.10)
 - [requirements.txt](requirements.txt) dependencies
 
 ## Pre-optimized configurations
