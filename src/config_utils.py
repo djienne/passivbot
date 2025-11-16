@@ -1133,6 +1133,9 @@ def get_template_config(passivbot_mode="v7"):
             "start_date": "2021-04-01",
             "starting_balance": 100000.0,
             "use_btc_collateral": False,
+            # Optional: multiplier applied to Bybit fees in backtests (maker_fee).
+            # If omitted in user configs, default is 1.0 (no change); users can set 2.0 to double fees.
+            "bybit_fee_multiplier": 1.0,
         },
         "bot": {
             "long": {

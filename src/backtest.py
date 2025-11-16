@@ -486,9 +486,24 @@ def prep_backtest_args(config, mss, exchange, exchange_params=None, backtest_par
             for coin in coins
         ]
     if backtest_params is None:
+        # Base maker fee from market-specific settings
+        base_maker_fee = mss[coins[0]]["maker"]
+        # Determine which exchange's fees to emulate.
+        # For non-combined runs, this is simply `exchange`.
+        # For combined runs, prefer the chosen exchange for the first coin if present.
+        effective_exchange = exchange
+        if exchange == "combined":
+            first_coin_mss = mss.get(coins[0], {})
+            effective_exchange = first_coin_mss.get("exchange", exchange)
+        maker_fee = base_maker_fee
+        if effective_exchange == "bybit":
+            # Allow config override for Bybit fee multiplier.
+            # If not set in JSON, default to 1.0 (no change).
+            mult = float(get_optional_config_value(config, "backtest.bybit_fee_multiplier", 1.0))
+            maker_fee = base_maker_fee * mult
         backtest_params = {
             "starting_balance": require_config_value(config, "backtest.starting_balance"),
-            "maker_fee": mss[coins[0]]["maker"],
+            "maker_fee": maker_fee,
             "coins": coins,
             "use_btc_collateral": bool(require_config_value(config, "backtest.use_btc_collateral")),
             "requested_start_timestamp_ms": 0,

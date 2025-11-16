@@ -306,12 +306,21 @@ async def fetch_url(session, url, retries=10, backoff=1.0):
             async with session.get(url) as response:
                 response.raise_for_status()
                 return await response.read()
-        except Exception as e:
-            if isinstance(e, aiohttp.ClientResponseError) and getattr(e, "status", None) == 404:
-                logging.warning(f"{url} returned 404; skipping retries.")
+        except aiohttp.ClientResponseError as e:
+            status = getattr(e, "status", None)
+            # Treat 404/403 as "no data" and do not retry.
+            if status in (404, 403):
+                logging.warning(f"{url} returned {status}; skipping retries.")
                 return None
+            # For other HTTP errors (e.g. 429, 5xx), apply backoff but stop if out of retries.
             last_exc = e
-            # Exponential backoff: backoff * 2^attempt  (1s, 2s, 4s, ...)
+            wait_time = backoff * (2 ** attempt)
+            logging.warning(
+                f"Attempt {attempt + 1} failed for {url}: HTTP {status} {e}, retrying in {wait_time:.1f}s..."
+            )
+            await asyncio.sleep(wait_time)
+        except Exception as e:
+            last_exc = e
             wait_time = backoff * (2 ** attempt)
             logging.warning(
                 f"Attempt {attempt + 1} failed for {url}: {e}, retrying in {wait_time:.1f}s..."
@@ -586,9 +595,9 @@ class OHLCVManager:
         return True
 
     async def check_rate_limit(self):
-        # For bybit, rely on CCXT's internal rate limiting and Bybit's static
-        # archives; avoid adding extra sleeps or noisy logs here.
-        if self.exchange == "bybit":
+        # For bybit and bitget we rely on the exchange-side rate limiting and
+        # static archives; avoid adding extra sleeps or noisy logs here.
+        if self.exchange in ("bybit", "bitget"):
             return
         async with self._rate_limit_lock:
             # Prune timestamps older than 60 seconds
@@ -837,19 +846,27 @@ class OHLCVManager:
         df = self.filter_date_range(df)
 
         # ----------------------------------------------------------------------
-        # 2) Gap check with tolerance: if intervals != 60000 for any bar, return empty.
+        # 2) Gap check with tolerance: if intervals != 60000 for any bar.
+        #    For most exchanges, large gaps cause us to return empty data.
+        #    For bitget, we aggressively fill gaps instead of treating them as fatal.
         # ----------------------------------------------------------------------
         intervals = np.diff(df["timestamp"].values)
         # If any interval is not exactly 60000, we have a gap.
         if (intervals != 60000).any():
             greatest_gap = int(intervals.max() / 60000.0)
-            if greatest_gap > self.gap_tolerance_ohlcvs_minutes:
+            if self.exchange == "bitget":
                 logging.warning(
-                    f"[{self.exchange}] Gaps detected in {coin} OHLCV data. Greatest gap: {greatest_gap} minutes. Returning empty DataFrame."
+                    f"[{self.exchange}] Gaps detected in {coin} OHLCV data. Greatest gap: {greatest_gap} minutes. Filling gaps aggressively."
                 )
-                return pd.DataFrame(columns=df.columns)
-            else:
                 df = fill_gaps_in_ohlcvs(df)
+            else:
+                if greatest_gap > self.gap_tolerance_ohlcvs_minutes:
+                    logging.warning(
+                        f"[{self.exchange}] Gaps detected in {coin} OHLCV data. Greatest gap: {greatest_gap} minutes. Returning empty DataFrame."
+                    )
+                    return pd.DataFrame(columns=df.columns)
+                else:
+                    df = fill_gaps_in_ohlcvs(df)
         return df
 
     def copy_ohlcvs_from_old_dir(self, new_dirpath, old_dirpath, missing_days, coin):
