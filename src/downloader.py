@@ -471,6 +471,8 @@ class OHLCVManager:
         # sleeping/logging concurrently.
         self._rate_limit_lock = asyncio.Lock()
         self.gap_tolerance_ohlcvs_minutes = gap_tolerance_ohlcvs_minutes
+        # Limit concurrent network-heavy download tasks per manager
+        self._download_semaphore = asyncio.Semaphore(10)
 
     def update_date_range(self, new_start_date=None, new_end_date=None):
         if new_start_date:
@@ -977,7 +979,8 @@ class OHLCVManager:
 
     async def download_single_binance(self, url: str, fpath: str):
         try:
-            csv = await get_zip_binance(url)
+            async with self._download_semaphore:
+                csv = await get_zip_binance(url)
             if not csv.empty:
                 dump_ohlcv_data(ensure_millis(csv), fpath)
                 if self.verbose:
@@ -1056,7 +1059,8 @@ class OHLCVManager:
 
     async def download_single_bybit(self, session, url: str, dirpath: str, day: str) -> pd.DataFrame:
         try:
-            resp = await fetch_url(session, url)
+            async with self._download_semaphore:
+                resp = await fetch_url(session, url)
             if resp is None:
                 if self.verbose:
                     logging.info(f"bybit No data at {url}")
@@ -1098,7 +1102,6 @@ class OHLCVManager:
         fpath = os.path.join(dirpath, day + ".npy")
 
         # First attempt: public trade archive
-        await self.check_rate_limit()
         await self.download_single_bybit(session, url, dirpath, day)
 
         # Validate archive result (if any)
@@ -1330,7 +1333,8 @@ class OHLCVManager:
 
     async def download_single_bitget(self, base_url, symbolf, day, fpath):
         url = self.get_url_bitget(base_url, symbolf, day)
-        res = await get_zip_bitget(url)
+        async with self._download_semaphore:
+            res = await get_zip_bitget(url)
         dump_ohlcv_data(ensure_millis(res), fpath)
         if self.verbose:
             logging.info(f"bitget Dumped daily data {fpath}")
@@ -1413,7 +1417,8 @@ class OHLCVManager:
     async def download_single_kucoin(self, symbolf: str, day: str, fpath: str):
         url = f"https://historical-data.kucoin.com/data/futures/daily/klines/{symbolf}/1m/{symbolf}-1m-{day}.zip"
         try:
-            zips = await fetch_zips(url)
+            async with self._download_semaphore:
+                zips = await fetch_zips(url)
             if not zips:
                 if self.verbose:
                     logging.info(f"kucoin No data at {url}")
