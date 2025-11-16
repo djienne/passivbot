@@ -537,6 +537,49 @@ class OHLCVManager:
             return False
         return True
 
+    def _is_bybit_day_valid(self, coin: str, day: str, df: pd.DataFrame, max_missing_minutes: int = 61) -> bool:
+        """
+        Check whether a bybit daily OHLCV slice is acceptable.
+
+        - Requires no sub-minute intervals.
+        - Computes missing minutes across the full day [00:00, 24:00) including edges.
+        - Accepts days with missing_minutes <= max_missing_minutes.
+        """
+        start_ts_day = date_to_ts(day)
+        end_ts_day = start_ts_day + 24 * 60 * 60 * 1000
+        df_day = df[
+            (df["timestamp"] >= start_ts_day) & (df["timestamp"] < end_ts_day)
+        ].reset_index(drop=True)
+
+        if df_day.empty:
+            logging.info(
+                f"bybit {coin} {day}: Cached day has no candles, considered incomplete"
+            )
+            return False
+
+        intervals = np.diff(df_day["timestamp"].values)
+        if (intervals < 60000).any():
+            logging.info(
+                f"bybit {coin} {day}: Cached day has sub-minute intervals, considered incomplete"
+            )
+            return False
+
+        # Total missing minutes across the day, including edges
+        first_ts = int(df_day["timestamp"].iloc[0])
+        last_ts = int(df_day["timestamp"].iloc[-1])
+        missing_before_first = max(0, (first_ts - start_ts_day) // 60000)
+        missing_after_last = max(0, (end_ts_day - last_ts) // 60000 - 1)
+        missing_internal = int(sum((gap // 60000) - 1 for gap in intervals if gap > 60000))
+        missing_minutes = int(missing_before_first + missing_internal + missing_after_last)
+
+        if missing_minutes > max_missing_minutes:
+            logging.info(
+                f"bybit {coin} {day}: Cached day has {missing_minutes} missing minutes, considered incomplete"
+            )
+            return False
+
+        return True
+
     async def check_rate_limit(self):
         current_time = time()
         while self.request_timestamps and current_time - self.request_timestamps[0] > 60:
@@ -611,39 +654,7 @@ class OHLCVManager:
                 fpath = os.path.join(dirpath, fname)
                 try:
                     df = load_ohlcv_data(fpath)
-                    start_ts_day = date_to_ts(day)
-                    end_ts_day = start_ts_day + 24 * 60 * 60 * 1000
-                    df_day = df[
-                        (df["timestamp"] >= start_ts_day) & (df["timestamp"] < end_ts_day)
-                    ].reset_index(drop=True)
-                    if df_day.empty:
-                        logging.info(
-                            f"bybit {coin} {day}: Cached day has no candles, scheduled for re-download"
-                        )
-                        missing_days.append(day)
-                        continue
-                    intervals = np.diff(df_day["timestamp"].values)
-                    if (intervals < 60000).any():
-                        logging.info(
-                            f"bybit {coin} {day}: Cached day has sub-minute intervals, scheduled for re-download"
-                        )
-                        missing_days.append(day)
-                        continue
-                    # Total missing minutes across the day, including edges
-                    first_ts = int(df_day["timestamp"].iloc[0])
-                    last_ts = int(df_day["timestamp"].iloc[-1])
-                    missing_before_first = max(0, (first_ts - start_ts_day) // 60000)
-                    missing_after_last = max(0, (end_ts_day - last_ts) // 60000 - 1)
-                    missing_internal = int(
-                        sum((gap // 60000) - 1 for gap in intervals if gap > 60000)
-                    )
-                    missing_minutes = int(
-                        missing_before_first + missing_internal + missing_after_last
-                    )
-                    if missing_minutes > 61:
-                        logging.info(
-                            f"bybit {coin} {day}: Cached day has {missing_minutes} missing minutes, scheduled for re-download"
-                        )
+                    if not self._is_bybit_day_valid(coin, day, df):
                         missing_days.append(day)
                 except Exception as e:
                     logging.warning(
@@ -979,39 +990,40 @@ class OHLCVManager:
         base_url = "https://public.bybit.com/trading/"
         webpage = urlopen(f"{base_url}{symbolf}/").read().decode()
 
-        filenames = [
-            f"{symbolf}{day}.csv.gz" for day in missing_days if f"{symbolf}{day}.csv.gz" in webpage
+        # Split missing days into those with archive files and those without
+        days_with_archive = [
+            day for day in missing_days if f"{symbolf}{day}.csv.gz" in webpage
         ]
-        # Download concurrently from public trade archives
+        days_without_archive = sorted(set(missing_days) - set(days_with_archive))
+
+        # Download concurrently from public trade archives, with per-day API fallback
         async with aiohttp.ClientSession() as session:
             tasks = []
-            for fn in filenames:
+            for day in days_with_archive:
+                fn = f"{symbolf}{day}.csv.gz"
                 url = f"{base_url}{symbolf}/{fn}"
-                day = fn[-17:-7]
-                await self.check_rate_limit()
                 tasks.append(
-                    asyncio.create_task(self.download_single_bybit(session, url, dirpath, day))
+                    asyncio.create_task(
+                        self.download_single_bybit_with_fallback(session, coin, url, dirpath, day)
+                    )
                 )
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Fallback: for any remaining missing days, try Bybit API klines
-        remaining_missing_days = await self.get_missing_days_ohlcvs(coin)
-        if remaining_missing_days:
+        # For days that have no archive file at all, go straight to API fallback
+        if days_without_archive:
+            logging.info(
+                f"bybit {coin}: {len(days_without_archive)} day(s) have no archive file, using API klines only"
+            )
             if self.cc is None:
                 self.load_cc()
-            for day in sorted(remaining_missing_days):
+            for day in days_without_archive:
                 fpath = os.path.join(dirpath, day + ".npy")
-                try:
-                    logging.info(f"bybit {coin} {day}: Falling back to API klines")
-                    await self.check_rate_limit()
-                    success = await self.download_single_bybit_api(coin, day, fpath)
-                    if not success:
-                        logging.info(
-                            f"bybit {coin} {day}: API fallback did not yield a complete day; data remains missing"
-                        )
-                except Exception as e:
-                    logging.error(f"bybit API error for {coin} {day}: {e}")
-                    traceback.print_exc()
+                await self.check_rate_limit()
+                success = await self.download_single_bybit_api(coin, day, fpath)
+                if not success:
+                    logging.info(
+                        f"bybit {coin} {day}: API-only fallback did not yield a complete day; data remains missing"
+                    )
 
     async def find_first_day_bybit(self, coin: str, webpage=None) -> float:
         symbolf = self.get_symbol(coin).replace("/USDT:", "")
@@ -1058,6 +1070,60 @@ class OHLCVManager:
             traceback.print_exc()
             return pd.DataFrame()
 
+    async def download_single_bybit_with_fallback(
+        self, session, coin: str, url: str, dirpath: str, day: str
+    ) -> None:
+        """
+        Download a single Bybit day from the public trade archive, and if that fails
+        or produces an incomplete day, fall back to the kline API.
+        """
+        fpath = os.path.join(dirpath, day + ".npy")
+
+        # First attempt: public trade archive
+        await self.check_rate_limit()
+        await self.download_single_bybit(session, url, dirpath, day)
+
+        # Validate archive result (if any)
+        if os.path.exists(fpath):
+            try:
+                df = load_ohlcv_data(fpath)
+                if self._is_bybit_day_valid(coin, day, df):
+                    # Archive produced an acceptable day; nothing else to do
+                    return
+                else:
+                    logging.info(
+                        f"bybit {coin} {day}: Archive data incomplete, falling back to API klines"
+                    )
+            except Exception as e:
+                logging.warning(
+                    f"bybit {coin} {day}: Error reading archive file {fpath} ({e}), falling back to API klines"
+                )
+        else:
+            logging.info(
+                f"bybit {coin} {day}: No archive file written, falling back to API klines"
+            )
+
+        # Fallback: Bybit kline API
+        if self.cc is None:
+            self.load_cc()
+        await self.check_rate_limit()
+        success = await self.download_single_bybit_api(coin, day, fpath)
+        if not success:
+            # Ensure we don't keep a known-bad archive file on disk
+            if os.path.exists(fpath):
+                try:
+                    os.remove(fpath)
+                    logging.info(
+                        f"bybit {coin} {day}: Removed incomplete archive file after failed API fallback"
+                    )
+                except Exception as e:
+                    logging.warning(
+                        f"bybit {coin} {day}: Failed to remove incomplete file {fpath}: {e}"
+                    )
+            logging.info(
+                f"bybit {coin} {day}: API fallback did not yield a complete day; data remains missing"
+            )
+
     async def download_single_bybit_api(self, coin: str, day: str, fpath: str) -> bool:
         """
         Fallback loader for Bybit using the official kline API when public
@@ -1078,13 +1144,38 @@ class OHLCVManager:
             if self.cc is None:
                 self.load_cc()
 
-            ohlcvs = await self.cc.fetch_ohlcv(symbol, timeframe="1m", since=start_ts, limit=1440)
-            if not ohlcvs:
+            # Manually page through 1m klines to avoid per-call limits (e.g. 1000)
+            all_rows = []
+            cursor = start_ts
+            max_pages = 10
+            for page in range(max_pages):
+                await self.check_rate_limit()
+                try:
+                    ohlcvs = await self.cc.fetch_ohlcv(
+                        symbol, timeframe="1m", since=cursor, limit=1000
+                    )
+                except Exception as e:
+                    logging.error(
+                        f"bybit API {coin} {day}: fetch_ohlcv error on page {page + 1}: {e}"
+                    )
+                    break
+
+                if not ohlcvs:
+                    break
+
+                all_rows.extend(ohlcvs)
+                last_ts = ohlcvs[-1][0]
+                # Advance cursor to next minute
+                cursor = int(last_ts) + 60_000
+                if cursor >= end_ts:
+                    break
+
+            if not all_rows:
                 logging.info(f"bybit API {coin} {day}: No kline data returned")
                 return False
 
             df = pd.DataFrame(
-                ohlcvs,
+                all_rows,
                 columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
             df = ensure_millis(df)
@@ -1092,7 +1183,7 @@ class OHLCVManager:
                 drop=True
             )
 
-            # Require a complete 1m day
+            # Require a complete 1m day (1440 unique minutes) with no gaps
             if len(df) != 1440:
                 logging.info(
                     f"bybit API {coin} {day}: Incomplete day ({len(df)}/1440 candles), skipping"
