@@ -1,1 +1,1 @@
-python src/tools/download_hyperliquid_data.py --coins AAVE ADA AVAX BCH BGB BNB BTC DOGE DOT ETH HBAR HYPE LINK LTC SHIB SOL SUI TON TRX UNI XLM XMR XRP --days-back 3
+python src/tools/download_hyperliquid_data.py --coins AAVE ADA AVAX BCH BNB BTC DOGE DOT ETH HBAR HYPE LINK LTC SOL SUI TON TRX UNI XLM XRP --days-back 3
