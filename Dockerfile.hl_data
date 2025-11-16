@@ -1,0 +1,53 @@
+FROM python:3.10-slim-bullseye
+
+ENV DEBIAN_FRONTEND=noninteractive
+# Skip runtime Rust compilation; extensions are prebuilt at image build time
+ENV SKIP_RUST_COMPILE=true
+# Python unbuffered output for better logging
+ENV PYTHONUNBUFFERED=1
+
+# Install system build dependencies + cron for scheduling
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        python3-dev \
+        pkg-config \
+        libssl-dev \
+        curl \
+        git \
+        cron \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust toolchain
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /app
+
+# Copy rust toolchain specification first
+COPY rust-toolchain.toml .
+
+# Copy all source code
+COPY . .
+
+# Install Python dependencies (including maturin for Rust extension builds)
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Build Rust extensions for backtesting and optimization
+# This is required even for the download script due to import dependencies
+RUN cd passivbot-rust \
+    && rm -rf target/wheels/*.whl \
+    && maturin build --release \
+    && pip install target/wheels/*.whl
+
+# Convert line endings and make the entrypoint script executable (Windows compatibility)
+RUN sed -i 's/\r$//' /app/scripts/download_cron_entrypoint.sh && \
+    chmod +x /app/scripts/download_cron_entrypoint.sh
+
+# Create directories for data persistence
+RUN mkdir -p /app/historical_data/ohlcvs_hyperliquid \
+    /app/caches/hyperliquid \
+    /var/log
+
+# Default entrypoint runs the cron scheduler
+ENTRYPOINT ["/bin/bash", "/app/scripts/download_cron_entrypoint.sh"]

@@ -154,6 +154,25 @@ Running several Passivbot instances against the same exchange on one machine is 
 - Backtests that include `hyperliquid` in `backtest.exchanges` (for example `configs/test_hyperliquid_btc_aggressive.json`) automatically download any missing Hyperliquid days before running.
 - Hyperliquid only exposes ~3.5 days of 1m history; run either the Hyperliquid backtest or `python src/tools/download_hyperliquid_data.py --coins BTC ETH SOL HYPE --days-back 3` regularly (every 2–3 days) to accumulate long-term local history.
 
+### Automated Hyperliquid Data Collection with Docker
+
+For automated data collection, use the included Docker setup that runs the downloader every 4 hours:
+
+```bash
+# Start the automated downloader (runs in background)
+docker compose -f docker-compose_HL_data.yml up -d
+
+# View logs
+docker logs -f passivbot-hl-downloader
+
+# Stop the downloader
+docker compose -f docker-compose_HL_data.yml down
+```
+
+The Docker scheduler downloads data for 20 major coins (AAVE, ADA, AVAX, BCH, BNB, BTC, DOGE, DOT, ETH, HBAR, HYPE, LINK, LTC, SOL, SUI, TON, TRX, UNI, XLM, XRP) every 4 hours, automatically accumulating historical data over time. Data is persisted in `./historical_data/` and `./caches/` directories.
+
+**Requirements:** Docker and Docker Compose installed on your system.
+
 ## Jupyter Lab
 
 Jupyter lab needs to be run in the same virtual environment as the bot. Activate venv (see installation instructions above, step 3), and launch Jupyter lab from the Passivbot root dir with:

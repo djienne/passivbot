@@ -1,0 +1,33 @@
+services:
+  hyperliquid-downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile.hl_data
+    image: passivbot-hl-downloader:latest
+    container_name: passivbot-hl-downloader
+    restart: unless-stopped
+    volumes:
+      # Persist downloaded historical data
+      - ./historical_data:/app/historical_data
+      # Persist cache for first timestamps
+      - ./caches:/app/caches
+      # Mount broker codes (read-only)
+      - ./broker_codes.hjson:/app/broker_codes.hjson:ro
+      # Optional: mount configs if you want to use --config instead of --coins
+      - ./configs:/app/configs:ro
+    environment:
+      # Skip runtime Rust compilation (already built in image)
+      - SKIP_RUST_COMPILE=true
+      # Python unbuffered output for better logging
+      - PYTHONUNBUFFERED=1
+    entrypoint: ["/bin/bash", "/app/scripts/download_cron_entrypoint.sh"]
+    # Override command if needed for one-time runs:
+    # command: python src/tools/download_hyperliquid_data.py --coins BTC ETH SOL --days-back 3
+
+    # Health check to ensure container is functioning
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x cron > /dev/null || exit 1"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
