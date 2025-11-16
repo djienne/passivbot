@@ -11,7 +11,7 @@ import time
 from colorama import init, Fore
 from prettytable import PrettyTable
 from config_utils import dump_config
-from utils import make_get_filepath
+from utils import make_get_filepath, get_quote
 from pure_funcs import denumpyize, ts_to_date
 import passivbot_rust as pbr
 
@@ -195,6 +195,7 @@ def dump_plots(
         if n_parts is not None
         else min(12, max(3, int(pbr.round_up(result["n_days"] / 14, 1.0))))
     )
+    quote_ccy = get_quote(result.get("exchange", ""))
     for side, fdf in [("long", longs), ("short", shorts)]:
         if result[side]["enabled"]:
             plt.clf()
@@ -206,7 +207,9 @@ def dump_plots(
             plt.clf()
             sdf[f"balance_{side}"].plot()
             sdf[f"equity_{side}"].plot(
-                title=f"Balance and equity {side.capitalize()}", xlabel="Time", ylabel="Balance"
+                title=f"Balance and equity {side.capitalize()}",
+                xlabel="Time",
+                ylabel=f"Balance ({quote_ccy})",
             )
             plt.savefig(f"{result['plots_dirpath']}balance_and_equity_sampled_{side}.png")
 

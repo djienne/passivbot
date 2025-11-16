@@ -28,6 +28,7 @@ from utils import (
     format_end_date,
     format_approved_ignored_coins,
     date_to_ts,
+    get_quote,
 )
 from pure_funcs import (
     ts_to_date,
@@ -79,7 +80,8 @@ def create_shared_memory_file(array: np.ndarray):
                 print(f"Failed to delete temporary file {filepath}: {e}")
 
 
-plt.rcParams["figure.figsize"] = [29, 18]
+# Use a reasonably sized default figure for backtest plots
+plt.rcParams["figure.figsize"] = [16, 9]
 
 
 def oj(*x):
@@ -693,8 +695,9 @@ def plot_forager(
     bal_eq,
     hlcvs,
     timestamps,
-):
+    ):
     plots_dir = make_get_filepath(oj(results_path, "fills_plots", ""))
+    quote_ccy = get_quote(exchange)
 
     # Convert minute index to datetime if timestamps are available
     if timestamps is not None and len(timestamps) > 0:
@@ -719,77 +722,54 @@ def plot_forager(
 
     plt.clf()
     ax = bal_eq_dt[["balance", "equity"]].plot(logy=False)
-    try:
-        if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
-            locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
-            formatter = mdates.ConciseDateFormatter(locator)
-            ax.xaxis.set_major_locator(locator)
-            ax.xaxis.set_major_formatter(formatter)
-            plt.gcf().autofmt_xdate()
-            logging.debug("Successfully applied datetime formatting to balance_and_equity.png")
-        else:
-            logging.warning(
-                f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
-                "skipping datetime formatting"
-            )
-    except Exception as e:
-        logging.error(f"Error formatting datetime x-axis for balance_and_equity.png: {e}")
+    ax.set_ylabel(f"Balance ({quote_ccy})")
+    if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
+        # Let pandas/matplotlib handle date locator/formatter; just rotate for readability
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+        plt.tight_layout()
+    else:
+        logging.warning(
+            f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
+            "skipping datetime formatting"
+        )
     plt.savefig(oj(results_path, "balance_and_equity.png"))
     plt.clf()
     ax = bal_eq_dt[["balance", "equity"]].plot(logy=True)
-    try:
-        if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
-            locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
-            formatter = mdates.ConciseDateFormatter(locator)
-            ax.xaxis.set_major_locator(locator)
-            ax.xaxis.set_major_formatter(formatter)
-            plt.gcf().autofmt_xdate()
-            logging.debug("Successfully applied datetime formatting to balance_and_equity_logy.png")
-        else:
-            logging.warning(
-                f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
-                "skipping datetime formatting"
-            )
-    except Exception as e:
-        logging.error(f"Error formatting datetime x-axis for balance_and_equity_logy.png: {e}")
+    ax.set_ylabel(f"Balance ({quote_ccy})")
+    if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+        plt.tight_layout()
+    else:
+        logging.warning(
+            f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
+            "skipping datetime formatting"
+        )
     plt.savefig(oj(results_path, "balance_and_equity_logy.png"))
     plt.clf()
     if bool(require_config_value(config, "backtest.use_btc_collateral")):
         plt.clf()
         ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=False)
-        try:
-            if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
-                locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
-                formatter = mdates.ConciseDateFormatter(locator)
-                ax.xaxis.set_major_locator(locator)
-                ax.xaxis.set_major_formatter(formatter)
-                plt.gcf().autofmt_xdate()
-                logging.debug("Successfully applied datetime formatting to balance_and_equity_btc.png")
-            else:
-                logging.warning(
-                    f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
-                    "skipping datetime formatting"
-                )
-        except Exception as e:
-            logging.error(f"Error formatting datetime x-axis for balance_and_equity_btc.png: {e}")
+        ax.set_ylabel("Balance (BTC)")
+        if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
+            plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+            plt.tight_layout()
+        else:
+            logging.warning(
+                f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
+                "skipping datetime formatting"
+            )
         plt.savefig(oj(results_path, "balance_and_equity_btc.png"))
         plt.clf()
         ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=True)
-        try:
-            if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
-                locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
-                formatter = mdates.ConciseDateFormatter(locator)
-                ax.xaxis.set_major_locator(locator)
-                ax.xaxis.set_major_formatter(formatter)
-                plt.gcf().autofmt_xdate()
-                logging.debug("Successfully applied datetime formatting to balance_and_equity_btc_logy.png")
-            else:
-                logging.warning(
-                    f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
-                    "skipping datetime formatting"
-                )
-        except Exception as e:
-            logging.error(f"Error formatting datetime x-axis for balance_and_equity_btc_logy.png: {e}")
+        ax.set_ylabel("Balance (BTC)")
+        if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
+            plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+            plt.tight_layout()
+        else:
+            logging.warning(
+                f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
+                "skipping datetime formatting"
+            )
         plt.savefig(oj(results_path, "balance_and_equity_btc_logy.png"))
 
     if not config["disable_plotting"]:
