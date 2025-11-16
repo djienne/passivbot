@@ -191,7 +191,7 @@ docker logs -f passivbot-hype-live
 docker compose down
 ```
 
-The default configuration runs `configs/hype_dio.json`. To use a different config, edit the `command` line in `docker-compose.yml`.
+The default configuration runs `configs/hype_dio.json` (not included in repository - you'll need to create your own config or use one from `configs/examples/`). To use a different config, edit the `command` line in `docker-compose.yml`.
 
 **Requirements:**
 - Docker and Docker Compose installed on your system
