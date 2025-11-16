@@ -467,6 +467,9 @@ class OHLCVManager:
         self.verbose = verbose
         self.max_requests_per_minute = {"": 120, "gateio": 60}
         self.request_timestamps = deque(maxlen=1000)  # for rate-limiting checks
+        # Serialize rate-limit checks per exchange to avoid multiple tasks
+        # sleeping/logging concurrently.
+        self._rate_limit_lock = asyncio.Lock()
         self.gap_tolerance_ohlcvs_minutes = gap_tolerance_ohlcvs_minutes
 
     def update_date_range(self, new_start_date=None, new_end_date=None):
@@ -581,24 +584,39 @@ class OHLCVManager:
         return True
 
     async def check_rate_limit(self):
-        current_time = time()
-        while self.request_timestamps and current_time - self.request_timestamps[0] > 60:
-            self.request_timestamps.popleft()
-        mrpm = (
-            self.max_requests_per_minute[self.exchange]
-            if self.exchange in self.max_requests_per_minute
-            else self.max_requests_per_minute[""]
-        )
-        if len(self.request_timestamps) >= mrpm:
-            sleep_time = 60 - (current_time - self.request_timestamps[0])
-            if sleep_time > 0:
-                if self.verbose:
-                    logging.info(
-                        f"{self.exchange} Rate limit reached, sleeping for {sleep_time:.2f} seconds"
-                    )
-                await asyncio.sleep(sleep_time)
+        # For bybit, rely on CCXT's internal rate limiting and Bybit's static
+        # archives; avoid adding extra sleeps or noisy logs here.
+        if self.exchange == "bybit":
+            return
+        async with self._rate_limit_lock:
+            # Prune timestamps older than 60 seconds
+            now = time()
+            while self.request_timestamps and now - self.request_timestamps[0] > 60:
+                self.request_timestamps.popleft()
 
-        self.request_timestamps.append(current_time)
+            mrpm = (
+                self.max_requests_per_minute[self.exchange]
+                if self.exchange in self.max_requests_per_minute
+                else self.max_requests_per_minute[""]
+            )
+
+            if len(self.request_timestamps) >= mrpm:
+                # Earliest time when another request is allowed
+                earliest = self.request_timestamps[0] + 60.0
+                sleep_time = max(0.0, earliest - now)
+                if sleep_time > 0:
+                    if self.verbose:
+                        logging.info(
+                            f"{self.exchange} Rate limit reached, sleeping for {sleep_time:.2f} seconds"
+                        )
+                    await asyncio.sleep(sleep_time)
+                    # Recompute time and prune again after sleeping
+                    now = time()
+                    while self.request_timestamps and now - self.request_timestamps[0] > 60:
+                        self.request_timestamps.popleft()
+
+            # Record this request time
+            self.request_timestamps.append(time())
 
     async def get_ohlcvs(self, coin, start_date=None, end_date=None):
         """
@@ -1129,8 +1147,8 @@ class OHLCVManager:
         Fallback loader for Bybit using the official kline API when public
         trade archive data is unavailable for a given day.
 
-        Uses ccxt's async fetch_ohlcv under the hood and enforces a complete,
-        gap-free 1m day (1440 candles) before saving.
+        Uses Bybit's HTTP /v5/market/kline endpoint directly and enforces a
+        complete, gap-free 1m day (1440 candles) before saving.
         """
         start_ts = int(date_to_ts(day))
         end_ts = start_ts + 24 * 60 * 60 * 1000
@@ -1141,44 +1159,108 @@ class OHLCVManager:
                 logging.warning(f"bybit API {coin} {day}: No symbol found, skipping")
                 return False
 
-            if self.cc is None:
-                self.load_cc()
+            # Convert CCXT-style symbol (e.g. "BTC/USDT:USDT") to Bybit's "BTCUSDT"
+            symbolf = symbol.replace("/USDT:", "")
 
-            # Manually page through 1m klines to avoid per-call limits (e.g. 1000)
+            base_url = "https://api.bybit.com/v5/market/kline"
+            interval = "1"  # 1m
+            limit = 1000
+
+            # Page backwards in time by adjusting 'end' (API returns klines in reverse order)
             all_rows = []
-            cursor = start_ts
+            cursor_end = end_ts
             max_pages = 10
-            for page in range(max_pages):
-                await self.check_rate_limit()
-                try:
-                    ohlcvs = await self.cc.fetch_ohlcv(
-                        symbol, timeframe="1m", since=cursor, limit=1000
-                    )
-                except Exception as e:
-                    logging.error(
-                        f"bybit API {coin} {day}: fetch_ohlcv error on page {page + 1}: {e}"
-                    )
-                    break
 
-                if not ohlcvs:
-                    break
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                for page in range(max_pages):
+                    params = {
+                        "category": "linear",
+                        "symbol": symbolf,
+                        "interval": interval,
+                        "start": start_ts,
+                        "end": cursor_end,
+                        "limit": limit,
+                    }
+                    try:
+                        async with session.get(base_url, params=params) as response:
+                            text = await response.text()
+                            if response.status != 200:
+                                logging.error(
+                                    f"bybit API {coin} {day}: HTTP {response.status} response: {text[:200]}"
+                                )
+                                break
+                            try:
+                                data = json.loads(text)
+                            except Exception as e:
+                                logging.error(
+                                    f"bybit API {coin} {day}: Failed to parse JSON response: {e}"
+                                )
+                                break
+                    except Exception as e:
+                        logging.error(
+                            f"bybit API {coin} {day}: request error on page {page + 1}: {e}"
+                        )
+                        break
 
-                all_rows.extend(ohlcvs)
-                last_ts = ohlcvs[-1][0]
-                # Advance cursor to next minute
-                cursor = int(last_ts) + 60_000
-                if cursor >= end_ts:
-                    break
+                    if data.get("retCode") != 0:
+                        logging.error(
+                            f"bybit API {coin} {day}: retCode {data.get('retCode')} retMsg {data.get('retMsg')}"
+                        )
+                        break
+
+                    klines = (data.get("result") or {}).get("list") or []
+                    if not klines:
+                        break
+
+                    all_rows.extend(klines)
+
+                    # If we got fewer than 'limit' rows, no more pages
+                    if len(klines) < limit:
+                        break
+
+                    # API returns klines sorted in reverse by startTime, so the earliest is last
+                    earliest_ts = int(klines[-1][0])
+                    cursor_end = earliest_ts - 60_000
+                    if cursor_end <= start_ts:
+                        break
 
             if not all_rows:
                 logging.info(f"bybit API {coin} {day}: No kline data returned")
                 return False
 
+            # Each item: [startTime, openPrice, highPrice, lowPrice, closePrice, volume, turnover]
+            records = []
+            for k in all_rows:
+                try:
+                    ts = int(k[0])
+                    op = float(k[1])
+                    hi = float(k[2])
+                    lo = float(k[3])
+                    cl = float(k[4])
+                    vol = float(k[5])
+                    records.append(
+                        [ts, op, hi, lo, cl, vol]
+                    )
+                except Exception:
+                    # Skip malformed entries
+                    continue
+
+            if not records:
+                logging.info(f"bybit API {coin} {day}: All kline entries malformed or empty")
+                return False
+
             df = pd.DataFrame(
-                all_rows,
+                records,
                 columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
+            # Ensure ms, sort ascending and deduplicate by timestamp
             df = ensure_millis(df)
+            df = (
+                df.sort_values("timestamp")
+                .drop_duplicates("timestamp")
+                .reset_index(drop=True)
+            )
             df = df[(df["timestamp"] >= start_ts) & (df["timestamp"] < end_ts)].reset_index(
                 drop=True
             )
