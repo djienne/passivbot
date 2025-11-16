@@ -1,6 +1,6 @@
 ![Passivbot](docs/images/pbot_logo_full.svg)
 
-# Windows-Optimized Crypto Trading Bot with Enhanced Hyperliquid Support
+# Passivbot - Windows-Optimized Fork with Enhanced Hyperliquid Support
 
 :warning: **Used at one's own risk** :warning:
 
