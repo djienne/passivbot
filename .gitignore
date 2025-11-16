@@ -381,8 +381,5 @@ Cargo.lock
 /api-keys.json
 /caches
 /optimize_results
-!/historical_data/ohlcvs_hyperliquid/BTC/
-!/historical_data/ohlcvs_hyperliquid/ETH/
-!/historical_data/ohlcvs_hyperliquid/HYPE/
-!/historical_data/ohlcvs_hyperliquid/SOL/
+!/historical_data/ohlcvs_hyperliquid/
 !/configs/test_hyperliquid_btc_aggressive.json
