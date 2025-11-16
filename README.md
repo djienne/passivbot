@@ -2,6 +2,8 @@
 
 # Passivbot - Windows-Optimized Fork with Enhanced Hyperliquid Support
 
+*Trading bot running on Bybit, OKX, Bitget, GateIO, Binance, Kucoin and Hyperliquid*
+
 :warning: **Used at one's own risk** :warning:
 
 v7.4.4
