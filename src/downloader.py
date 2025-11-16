@@ -1002,8 +1002,13 @@ class OHLCVManager:
             for day in sorted(remaining_missing_days):
                 fpath = os.path.join(dirpath, day + ".npy")
                 try:
+                    logging.info(f"bybit {coin} {day}: Falling back to API klines")
                     await self.check_rate_limit()
-                    await self.download_single_bybit_api(coin, day, fpath)
+                    success = await self.download_single_bybit_api(coin, day, fpath)
+                    if not success:
+                        logging.info(
+                            f"bybit {coin} {day}: API fallback did not yield a complete day; data remains missing"
+                        )
                 except Exception as e:
                     logging.error(f"bybit API error for {coin} {day}: {e}")
                     traceback.print_exc()
@@ -1075,8 +1080,7 @@ class OHLCVManager:
 
             ohlcvs = await self.cc.fetch_ohlcv(symbol, timeframe="1m", since=start_ts, limit=1440)
             if not ohlcvs:
-                if self.verbose:
-                    logging.info(f"bybit API {coin} {day}: No kline data returned")
+                logging.info(f"bybit API {coin} {day}: No kline data returned")
                 return False
 
             df = pd.DataFrame(
@@ -1090,19 +1094,17 @@ class OHLCVManager:
 
             # Require a complete 1m day
             if len(df) != 1440:
-                if self.verbose:
-                    logging.info(
-                        f"bybit API {coin} {day}: Incomplete day ({len(df)}/1440 candles), skipping"
-                    )
+                logging.info(
+                    f"bybit API {coin} {day}: Incomplete day ({len(df)}/1440 candles), skipping"
+                )
                 return False
 
             intervals = np.diff(df["timestamp"].values)
             if not (intervals == 60000).all():
-                if self.verbose:
-                    max_gap = int(intervals.max() / 60000)
-                    logging.info(
-                        f"bybit API {coin} {day}: Gaps detected (max gap: {max_gap} minutes), skipping"
-                    )
+                max_gap = int(intervals.max() / 60000)
+                logging.info(
+                    f"bybit API {coin} {day}: Gaps detected (max gap: {max_gap} minutes), skipping"
+                )
                 return False
 
             dump_ohlcv_data(df, fpath)
