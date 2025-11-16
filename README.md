@@ -197,13 +197,6 @@ The default configuration runs `configs/hype_dio.json` (not included in reposito
 - Docker and Docker Compose installed on your system
 - Valid API keys configured in `api-keys.json` (the config specifies which exchange user to use)
 
-## Jupyter Lab
-
-Jupyter lab needs to be run in the same virtual environment as the bot. Activate venv (see installation instructions above, step 3), and launch Jupyter lab from the Passivbot root dir with:
-```shell
-python3 -m jupyter lab
-```
-
 ## Requirements
 
 - Python 3.10 (recommended; this Windows fork is optimized for 3.10)
@@ -219,12 +212,6 @@ See also https://pbconfigdb.scud.dedyn.io/
 ## Documentation:
 
 For more detailed information about Passivbot, see documentation files here: [docs/](docs/)
-
-## Support
-
-[![Discord](https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/QAF2H2UmzZ)
-
-[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/passivbot_futures)
 
 ## Third Party Links, Referrals and Tip Jar
 
