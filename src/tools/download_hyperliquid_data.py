@@ -49,6 +49,7 @@ from downloader import (
     dump_ohlcv_data,
     ensure_millis,
     get_days_in_between,
+    load_ohlcv_data,
 )
 
 # Configure logging
@@ -368,8 +369,19 @@ class HyperliquidDownloader:
         fpath = os.path.join(dirpath, f"{day_str}.npy")
 
         if os.path.exists(fpath) and not force:
-            logging.debug(f"{coin} {day_str}: Already exists, skipping")
-            return True
+            try:
+                existing_df = load_ohlcv_data(fpath)
+                if self.validate_day_data(existing_df, coin, day_str):
+                    logging.info(f"{coin} {day_str}: Existing file is complete, skipping download")
+                    return True
+                else:
+                    logging.info(
+                        f"{coin} {day_str}: Existing file incomplete or invalid, re-downloading"
+                    )
+            except Exception as e:
+                logging.warning(
+                    f"{coin} {day_str}: Error loading existing file {fpath} ({e}), re-downloading"
+                )
 
         # Fetch data
         df = await self.fetch_candles_for_day(coin, day_str)

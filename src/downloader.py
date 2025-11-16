@@ -299,7 +299,7 @@ def attempt_gap_fix_ohlcvs(df, symbol=None, verbose=True):
     return new_df.reset_index().rename(columns={"index": "timestamp"})
 
 
-async def fetch_url(session, url, retries=5, backoff=1.5):
+async def fetch_url(session, url, retries=10, backoff=1.0):
     last_exc = None
     for attempt in range(retries):
         try:
@@ -311,7 +311,8 @@ async def fetch_url(session, url, retries=5, backoff=1.5):
                 logging.warning(f"{url} returned 404; skipping retries.")
                 return None
             last_exc = e
-            wait_time = backoff**attempt
+            # Exponential backoff: backoff * 2^attempt  (1s, 2s, 4s, ...)
+            wait_time = backoff * (2 ** attempt)
             logging.warning(
                 f"Attempt {attempt + 1} failed for {url}: {e}, retrying in {wait_time:.1f}s..."
             )
@@ -599,7 +600,58 @@ class OHLCVManager:
         if not os.path.exists(dirpath):
             return days
         all_files = os.listdir(dirpath)
-        return sorted([x for x in days if x + ".npy" not in all_files])
+        missing_days = [x for x in days if x + ".npy" not in all_files]
+
+        # For bybit, also treat existing but incomplete or gap-filled days as missing
+        if self.exchange == "bybit":
+            for day in days:
+                fname = day + ".npy"
+                if fname not in all_files:
+                    continue
+                fpath = os.path.join(dirpath, fname)
+                try:
+                    df = load_ohlcv_data(fpath)
+                    start_ts_day = date_to_ts(day)
+                    end_ts_day = start_ts_day + 24 * 60 * 60 * 1000
+                    df_day = df[
+                        (df["timestamp"] >= start_ts_day) & (df["timestamp"] < end_ts_day)
+                    ].reset_index(drop=True)
+                    if df_day.empty:
+                        logging.info(
+                            f"bybit {coin} {day}: Cached day has no candles, scheduled for re-download"
+                        )
+                        missing_days.append(day)
+                        continue
+                    intervals = np.diff(df_day["timestamp"].values)
+                    if (intervals < 60000).any():
+                        logging.info(
+                            f"bybit {coin} {day}: Cached day has sub-minute intervals, scheduled for re-download"
+                        )
+                        missing_days.append(day)
+                        continue
+                    # Total missing minutes across the day, including edges
+                    first_ts = int(df_day["timestamp"].iloc[0])
+                    last_ts = int(df_day["timestamp"].iloc[-1])
+                    missing_before_first = max(0, (first_ts - start_ts_day) // 60000)
+                    missing_after_last = max(0, (end_ts_day - last_ts) // 60000 - 1)
+                    missing_internal = int(
+                        sum((gap // 60000) - 1 for gap in intervals if gap > 60000)
+                    )
+                    missing_minutes = int(
+                        missing_before_first + missing_internal + missing_after_last
+                    )
+                    if missing_minutes > 61:
+                        logging.info(
+                            f"bybit {coin} {day}: Cached day has {missing_minutes} missing minutes, scheduled for re-download"
+                        )
+                        missing_days.append(day)
+                except Exception as e:
+                    logging.warning(
+                        f"bybit {coin} {day}: Error reading cached file {fpath} ({e}), scheduled for re-download"
+                    )
+                    missing_days.append(day)
+
+        return sorted(set(missing_days))
 
     async def download_ohlcvs(self, coin):
         if not self.markets:
@@ -930,7 +982,7 @@ class OHLCVManager:
         filenames = [
             f"{symbolf}{day}.csv.gz" for day in missing_days if f"{symbolf}{day}.csv.gz" in webpage
         ]
-        # Download concurrently
+        # Download concurrently from public trade archives
         async with aiohttp.ClientSession() as session:
             tasks = []
             for fn in filenames:
@@ -941,6 +993,20 @@ class OHLCVManager:
                     asyncio.create_task(self.download_single_bybit(session, url, dirpath, day))
                 )
             results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Fallback: for any remaining missing days, try Bybit API klines
+        remaining_missing_days = await self.get_missing_days_ohlcvs(coin)
+        if remaining_missing_days:
+            if self.cc is None:
+                self.load_cc()
+            for day in sorted(remaining_missing_days):
+                fpath = os.path.join(dirpath, day + ".npy")
+                try:
+                    await self.check_rate_limit()
+                    await self.download_single_bybit_api(coin, day, fpath)
+                except Exception as e:
+                    logging.error(f"bybit API error for {coin} {day}: {e}")
+                    traceback.print_exc()
 
     async def find_first_day_bybit(self, coin: str, webpage=None) -> float:
         symbolf = self.get_symbol(coin).replace("/USDT:", "")
@@ -956,6 +1022,10 @@ class OHLCVManager:
     async def download_single_bybit(self, session, url: str, dirpath: str, day: str) -> pd.DataFrame:
         try:
             resp = await fetch_url(session, url)
+            if resp is None:
+                if self.verbose:
+                    logging.info(f"bybit No data at {url}")
+                return pd.DataFrame()
             with gzip.open(BytesIO(resp)) as f:
                 raw = pd.read_csv(f)
             # Convert trades to OHLCV
@@ -982,6 +1052,67 @@ class OHLCVManager:
             logging.error(f"bybit error {url}: {e}")
             traceback.print_exc()
             return pd.DataFrame()
+
+    async def download_single_bybit_api(self, coin: str, day: str, fpath: str) -> bool:
+        """
+        Fallback loader for Bybit using the official kline API when public
+        trade archive data is unavailable for a given day.
+
+        Uses ccxt's async fetch_ohlcv under the hood and enforces a complete,
+        gap-free 1m day (1440 candles) before saving.
+        """
+        start_ts = int(date_to_ts(day))
+        end_ts = start_ts + 24 * 60 * 60 * 1000
+
+        try:
+            symbol = self.get_symbol(coin)
+            if not symbol:
+                logging.warning(f"bybit API {coin} {day}: No symbol found, skipping")
+                return False
+
+            if self.cc is None:
+                self.load_cc()
+
+            ohlcvs = await self.cc.fetch_ohlcv(symbol, timeframe="1m", since=start_ts, limit=1440)
+            if not ohlcvs:
+                if self.verbose:
+                    logging.info(f"bybit API {coin} {day}: No kline data returned")
+                return False
+
+            df = pd.DataFrame(
+                ohlcvs,
+                columns=["timestamp", "open", "high", "low", "close", "volume"],
+            )
+            df = ensure_millis(df)
+            df = df[(df["timestamp"] >= start_ts) & (df["timestamp"] < end_ts)].reset_index(
+                drop=True
+            )
+
+            # Require a complete 1m day
+            if len(df) != 1440:
+                if self.verbose:
+                    logging.info(
+                        f"bybit API {coin} {day}: Incomplete day ({len(df)}/1440 candles), skipping"
+                    )
+                return False
+
+            intervals = np.diff(df["timestamp"].values)
+            if not (intervals == 60000).all():
+                if self.verbose:
+                    max_gap = int(intervals.max() / 60000)
+                    logging.info(
+                        f"bybit API {coin} {day}: Gaps detected (max gap: {max_gap} minutes), skipping"
+                    )
+                return False
+
+            dump_ohlcv_data(df, fpath)
+            if self.verbose:
+                logging.info(f"bybit API Dumped {fpath}")
+            return True
+        except Exception as e:
+            logging.error(f"bybit API error for {coin} {day}: {e}")
+            traceback.print_exc()
+            return False
 
     async def download_ohlcvs_bitget(self, coin: str):
         # Bitget has public data archives
