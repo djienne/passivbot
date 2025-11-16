@@ -1,6 +1,6 @@
 ![Passivbot](docs/images/pbot_logo_full.svg)
 
-# Trading bot running on Bybit, OKX, Bitget, GateIO, Binance, Kucoin and Hyperliquid
+# Windows-Optimized Crypto Trading Bot with Enhanced Hyperliquid Support
 
 :warning: **Used at one's own risk** :warning:
 
