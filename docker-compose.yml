@@ -1,9 +1,7 @@
 networks:
   default:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.12.48.0/22
+    external: true
+    name: passivbot_default
 services:
   passivbot-hype-live:
     build:
