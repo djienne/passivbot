@@ -656,30 +656,34 @@ def plot_forager(
 
     # Convert minute index to datetime if timestamps are available
     if timestamps is not None and len(timestamps) > 0:
-        ts_arr = np.asarray(timestamps)
-        idx_minutes = bal_eq.index.astype(int)
-        idx_clamped = np.clip(idx_minutes, 0, len(ts_arr) - 1)
-        dt_index = pd.to_datetime(ts_arr[idx_clamped], unit="ms")
+        base_ts = int(np.asarray(timestamps)[0])
+        idx_minutes = bal_eq.index.to_numpy(dtype="int64")
         bal_eq_dt = bal_eq.copy()
-        bal_eq_dt.index = dt_index
+        bal_eq_dt.index = pd.to_datetime(base_ts + idx_minutes * 60_000, unit="ms")
     else:
         bal_eq_dt = bal_eq
 
     plt.clf()
     ax = bal_eq_dt[["balance", "equity"]].plot(logy=False)
     try:
-        ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-        plt.gcf().autofmt_xdate()
+        if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
+            locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
+            formatter = mdates.ConciseDateFormatter(locator)
+            ax.xaxis.set_major_locator(locator)
+            ax.xaxis.set_major_formatter(formatter)
+            plt.gcf().autofmt_xdate()
     except Exception:
         pass
     plt.savefig(oj(results_path, "balance_and_equity.png"))
     plt.clf()
     ax = bal_eq_dt[["balance", "equity"]].plot(logy=True)
     try:
-        ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-        plt.gcf().autofmt_xdate()
+        if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
+            locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
+            formatter = mdates.ConciseDateFormatter(locator)
+            ax.xaxis.set_major_locator(locator)
+            ax.xaxis.set_major_formatter(formatter)
+            plt.gcf().autofmt_xdate()
     except Exception:
         pass
     plt.savefig(oj(results_path, "balance_and_equity_logy.png"))
@@ -688,18 +692,24 @@ def plot_forager(
         plt.clf()
         ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=False)
         try:
-            ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-            plt.gcf().autofmt_xdate()
+            if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
+                locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
+                formatter = mdates.ConciseDateFormatter(locator)
+                ax.xaxis.set_major_locator(locator)
+                ax.xaxis.set_major_formatter(formatter)
+                plt.gcf().autofmt_xdate()
         except Exception:
             pass
         plt.savefig(oj(results_path, "balance_and_equity_btc.png"))
         plt.clf()
         ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=True)
         try:
-            ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-            plt.gcf().autofmt_xdate()
+            if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
+                locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
+                formatter = mdates.ConciseDateFormatter(locator)
+                ax.xaxis.set_major_locator(locator)
+                ax.xaxis.set_major_formatter(formatter)
+                plt.gcf().autofmt_xdate()
         except Exception:
             pass
         plt.savefig(oj(results_path, "balance_and_equity_btc_logy.png"))

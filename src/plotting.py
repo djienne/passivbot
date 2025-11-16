@@ -459,15 +459,13 @@ def plot_fills_forager(
 
     # Map minute indices to datetimes if timestamps are provided
     if timestamps is not None and len(timestamps) > 0:
-        ts_arr = np.asarray(timestamps)
-        idx_hlcc = hlcc.index.astype(int)
-        idx_fdfc = fdfc.index.astype(int)
-        idx_hlcc = np.clip(idx_hlcc, 0, len(ts_arr) - 1)
-        idx_fdfc = np.clip(idx_fdfc, 0, len(ts_arr) - 1)
+        base_ts = int(np.asarray(timestamps)[0])
+        idx_hlcc = hlcc.index.to_numpy(dtype="int64")
+        idx_fdfc = fdfc.index.to_numpy(dtype="int64")
         hlcc = hlcc.copy()
         fdfc = fdfc.copy()
-        hlcc.index = pd.to_datetime(ts_arr[idx_hlcc], unit="ms")
-        fdfc.index = pd.to_datetime(ts_arr[idx_fdfc], unit="ms")
+        hlcc.index = pd.to_datetime(base_ts + idx_hlcc * 60_000, unit="ms")
+        fdfc.index = pd.to_datetime(base_ts + idx_fdfc * 60_000, unit="ms")
     ax = hlcc.close.plot(style="y--")
     hlcc.low.plot(style="g--")
     hlcc.high.plot(style="g--")
@@ -508,11 +506,14 @@ def plot_fills_forager(
 
     # Format x-axis as datetime with reasonable tick density
     try:
-        ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-        plt.gcf().autofmt_xdate()
+        if isinstance(hlcc.index, pd.DatetimeIndex):
+            locator = mdates.AutoDateLocator(minticks=5, maxticks=15)
+            formatter = mdates.ConciseDateFormatter(locator)
+            ax.xaxis.set_major_locator(locator)
+            ax.xaxis.set_major_formatter(formatter)
+            plt.gcf().autofmt_xdate()
     except Exception:
-        # If index is not datetime-compatible, fall back silently
+        # Fall back silently if any issues
         pass
     return plt
 
