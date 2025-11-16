@@ -56,7 +56,9 @@ fn analyze_backtest_basic(fills: &[Fill], equities: &Vec<f64>) -> Analysis {
                 }
             })
         });
-        if sorted_pct_change.len() % 2 == 0 {
+        if sorted_pct_change.is_empty() {
+            0.0
+        } else if sorted_pct_change.len() % 2 == 0 {
             (sorted_pct_change[sorted_pct_change.len() / 2 - 1]
                 + sorted_pct_change[sorted_pct_change.len() / 2])
                 / 2.0
@@ -66,11 +68,15 @@ fn analyze_backtest_basic(fills: &[Fill], equities: &Vec<f64>) -> Analysis {
     };
 
     // Calculate variance and standard deviation
-    let variance = daily_eqs_mins_pct_change
-        .iter()
-        .map(|&x| (x - adg).powi(2))
-        .sum::<f64>()
-        / daily_eqs_mins_pct_change.len() as f64;
+    let variance = if daily_eqs_mins_pct_change.is_empty() {
+        0.0
+    } else {
+        daily_eqs_mins_pct_change
+            .iter()
+            .map(|&x| (x - adg).powi(2))
+            .sum::<f64>()
+            / daily_eqs_mins_pct_change.len() as f64
+    };
     let std_dev = variance.sqrt();
 
     // Calculate Sharpe Ratio
@@ -113,27 +119,31 @@ fn analyze_backtest_basic(fills: &[Fill], equities: &Vec<f64>) -> Analysis {
 
     // Calculate Expected Shortfall (99%)
     let expected_shortfall_1pct = {
-        let mut sorted_returns = daily_eqs_mins_pct_change.clone();
-        sorted_returns.sort_by(|a, b| {
-            a.partial_cmp(b).unwrap_or_else(|| {
-                if a.is_nan() && b.is_nan() {
-                    Ordering::Equal
-                } else if a.is_nan() {
-                    Ordering::Greater
-                } else {
-                    Ordering::Less
-                }
-            })
-        });
-        let cutoff_index = (daily_eqs_mins_pct_change.len() as f64 * 0.01) as usize;
-        if cutoff_index > 0 {
-            sorted_returns[..cutoff_index]
-                .iter()
-                .map(|x| x.abs())
-                .sum::<f64>()
-                / cutoff_index as f64
+        if daily_eqs_mins_pct_change.is_empty() {
+            0.0
         } else {
-            sorted_returns[0].abs()
+            let mut sorted_returns = daily_eqs_mins_pct_change.clone();
+            sorted_returns.sort_by(|a, b| {
+                a.partial_cmp(b).unwrap_or_else(|| {
+                    if a.is_nan() && b.is_nan() {
+                        Ordering::Equal
+                    } else if a.is_nan() {
+                        Ordering::Greater
+                    } else {
+                        Ordering::Less
+                    }
+                })
+            });
+            let cutoff_index = (daily_eqs_mins_pct_change.len() as f64 * 0.01) as usize;
+            if cutoff_index > 0 {
+                sorted_returns[..cutoff_index]
+                    .iter()
+                    .map(|x| x.abs())
+                    .sum::<f64>()
+                    / cutoff_index as f64
+            } else {
+                sorted_returns[0].abs()
+            }
         }
     };
 
