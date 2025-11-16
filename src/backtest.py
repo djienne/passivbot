@@ -403,6 +403,17 @@ def ensure_valid_index_metadata(mss, hlcvs, coins, warmup_map=None):
             trade_start_idx = min(last_idx, first_idx + warm_minutes)
         meta["trade_start_index"] = trade_start_idx
 
+        tradeable_minutes = max(0, last_idx - trade_start_idx)
+        logging.info(
+            f"{coin} mss: first={first_idx}, last={last_idx}, total_steps={total_steps}, "
+            f"warmup={warm_minutes}, trade_start={trade_start_idx}, tradeable={tradeable_minutes}"
+        )
+        if tradeable_minutes == 0:
+            logging.warning(
+                f"{coin} has ZERO tradeable minutes! "
+                f"Warmup ({warm_minutes}min) consumed all data (first={first_idx}, last={last_idx})."
+            )
+
 
 async def prepare_hlcvs_mss(config, exchange):
     base_dir = require_config_value(config, "backtest.base_dir")
@@ -549,6 +560,12 @@ def run_backtest(hlcvs, mss, config: dict, exchange: str, btc_usd_prices, timest
         first_valid_indices.append(first_idx)
         last_valid_indices.append(last_idx)
         warm = int(meta.get("warmup_minutes", warmup_map.get(coin, default_warm)))
+        # Never warm up longer than the available window; keep at least 60 bars for trading
+        max_warm = max(0, last_idx - first_idx - 60)
+        if max_warm < 0:
+            max_warm = 0
+        if warm > max_warm:
+            warm = max_warm
         warmup_minutes.append(warm)
         if first_idx > last_idx:
             trade_idx = first_idx
@@ -559,7 +576,32 @@ def run_backtest(hlcvs, mss, config: dict, exchange: str, btc_usd_prices, timest
     backtest_params["last_valid_indices"] = last_valid_indices
     backtest_params["warmup_minutes"] = warmup_minutes
     backtest_params["trade_start_indices"] = trade_start_indices
-    backtest_params["global_warmup_bars"] = compute_backtest_warmup_minutes(config)
+
+    # Calculate global warmup and cap it intelligently based on available data
+    computed_global_warmup = compute_backtest_warmup_minutes(config)
+    # Reserve at least 50% of available data for trading, cap warmup to 50% of total steps
+    # This ensures enough data for the bot to actually make trades, especially for short backtests
+    max_reasonable_warmup = int(total_steps * 0.5)
+    if computed_global_warmup > max_reasonable_warmup:
+        logging.warning(
+            f"Global warmup ({computed_global_warmup}min) exceeds 50% of available data ({total_steps}min). "
+            f"Capping to {max_reasonable_warmup}min to ensure sufficient trading time. "
+            f"Consider increasing data range or reducing EMA spans for short backtests."
+        )
+        backtest_params["global_warmup_bars"] = max_reasonable_warmup
+    else:
+        backtest_params["global_warmup_bars"] = computed_global_warmup
+
+    logging.info(
+        f"Backtest params for Rust: coins={len(coins_order)}, "
+        f"total_steps={total_steps}, global_warmup={backtest_params['global_warmup_bars']}"
+    )
+    for i, coin in enumerate(coins_order[:5]):  # Log first 5 coins
+        logging.info(
+            f"  {coin}: first_valid={first_valid_indices[i]}, last_valid={last_valid_indices[i]}, "
+            f"warmup={warmup_minutes[i]}, trade_start={trade_start_indices[i]}, "
+            f"tradeable={last_valid_indices[i] - trade_start_indices[i]}"
+        )
     meta = mss.get("__meta__", {}) if isinstance(mss, dict) else {}
     candidate_start = meta.get(
         "requested_start_ts", require_config_value(config, "backtest.start_date")
@@ -660,8 +702,20 @@ def plot_forager(
         idx_minutes = bal_eq.index.to_numpy(dtype="int64")
         bal_eq_dt = bal_eq.copy()
         bal_eq_dt.index = pd.to_datetime(base_ts + idx_minutes * 60_000, unit="ms")
+        logging.info(
+            f"Converted {len(bal_eq)} minute indices to datetime. "
+            f"Base timestamp: {ts_to_date(base_ts)}, "
+            f"Index range: {idx_minutes.min()}-{idx_minutes.max()} minutes, "
+            f"Date range: {bal_eq_dt.index.min()} to {bal_eq_dt.index.max()}"
+        )
     else:
         bal_eq_dt = bal_eq
+        logging.warning(
+            f"No timestamps available for datetime conversion. "
+            f"Timestamps: {timestamps is not None}, "
+            f"Length: {len(timestamps) if timestamps is not None else 0}. "
+            f"Using minute indices for x-axis."
+        )
 
     plt.clf()
     ax = bal_eq_dt[["balance", "equity"]].plot(logy=False)
@@ -672,8 +726,14 @@ def plot_forager(
             ax.xaxis.set_major_locator(locator)
             ax.xaxis.set_major_formatter(formatter)
             plt.gcf().autofmt_xdate()
-    except Exception:
-        pass
+            logging.debug("Successfully applied datetime formatting to balance_and_equity.png")
+        else:
+            logging.warning(
+                f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
+                "skipping datetime formatting"
+            )
+    except Exception as e:
+        logging.error(f"Error formatting datetime x-axis for balance_and_equity.png: {e}")
     plt.savefig(oj(results_path, "balance_and_equity.png"))
     plt.clf()
     ax = bal_eq_dt[["balance", "equity"]].plot(logy=True)
@@ -684,8 +744,14 @@ def plot_forager(
             ax.xaxis.set_major_locator(locator)
             ax.xaxis.set_major_formatter(formatter)
             plt.gcf().autofmt_xdate()
-    except Exception:
-        pass
+            logging.debug("Successfully applied datetime formatting to balance_and_equity_logy.png")
+        else:
+            logging.warning(
+                f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
+                "skipping datetime formatting"
+            )
+    except Exception as e:
+        logging.error(f"Error formatting datetime x-axis for balance_and_equity_logy.png: {e}")
     plt.savefig(oj(results_path, "balance_and_equity_logy.png"))
     plt.clf()
     if bool(require_config_value(config, "backtest.use_btc_collateral")):
@@ -698,8 +764,14 @@ def plot_forager(
                 ax.xaxis.set_major_locator(locator)
                 ax.xaxis.set_major_formatter(formatter)
                 plt.gcf().autofmt_xdate()
-        except Exception:
-            pass
+                logging.debug("Successfully applied datetime formatting to balance_and_equity_btc.png")
+            else:
+                logging.warning(
+                    f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
+                    "skipping datetime formatting"
+                )
+        except Exception as e:
+            logging.error(f"Error formatting datetime x-axis for balance_and_equity_btc.png: {e}")
         plt.savefig(oj(results_path, "balance_and_equity_btc.png"))
         plt.clf()
         ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=True)
@@ -710,8 +782,14 @@ def plot_forager(
                 ax.xaxis.set_major_locator(locator)
                 ax.xaxis.set_major_formatter(formatter)
                 plt.gcf().autofmt_xdate()
-        except Exception:
-            pass
+                logging.debug("Successfully applied datetime formatting to balance_and_equity_btc_logy.png")
+            else:
+                logging.warning(
+                    f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
+                    "skipping datetime formatting"
+                )
+        except Exception as e:
+            logging.error(f"Error formatting datetime x-axis for balance_and_equity_btc_logy.png: {e}")
         plt.savefig(oj(results_path, "balance_and_equity_btc_logy.png"))
 
     if not config["disable_plotting"]:
