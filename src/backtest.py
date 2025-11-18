@@ -147,7 +147,7 @@ def process_forager_fills(fills, coins, hlcvs, equities, equities_btc):
             analysis_appendix[f"loss_profit_ratio_{pside}"] = 1.0
             continue
         pnls[pside] = profit + loss
-        analysis_appendix[f"loss_profit_ratio_{pside}"] = abs(loss / profit)
+        analysis_appendix[f"loss_profit_ratio_{pside}"] = abs(loss / profit) if profit != 0.0 else 0.0
     div_by = 60  # save some disk space. Set to 1 to dump uncropped
     total_pnl = pnls["long"] + pnls["short"]
     analysis_appendix["pnl_ratio_long_short"] = (
