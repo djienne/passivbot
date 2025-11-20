@@ -663,16 +663,21 @@ class OHLCVManager:
 
     async def get_start_date_modified(self, coin):
         fts = await self.get_first_timestamp(coin)
-        return ts_to_date(max(self.start_ts, fts))[:10]
+        modified_start = ts_to_date(max(self.start_ts, fts))[:10]
+        logging.info(f"DEBUG {self.exchange} {coin}: first_timestamp={fts} ({ts_to_date(fts) if fts else 'N/A'}), requested_start={self.start_ts} ({ts_to_date(self.start_ts)}), modified_start={modified_start}")
+        return modified_start
 
     async def get_missing_days_ohlcvs(self, coin):
         start_date = await self.get_start_date_modified(coin)
         days = get_days_in_between(start_date, self.end_date)
+        logging.info(f"DEBUG {self.exchange} {coin}: start_date={start_date}, end_date={self.end_date}, num_days={len(days)}")
         dirpath = os.path.join(self.cache_filepaths["ohlcvs"], coin)
         if not os.path.exists(dirpath):
+            logging.info(f"DEBUG {self.exchange} {coin}: cache dir doesn't exist, returning {len(days)} days to download")
             return days
         all_files = os.listdir(dirpath)
         missing_days = [x for x in days if x + ".npy" not in all_files]
+        logging.info(f"DEBUG {self.exchange} {coin}: cache dir exists with {len(all_files)} files, missing {len(missing_days)} days")
 
         # For bybit, also treat existing but incomplete or gap-filled days as missing
         if self.exchange == "bybit":
@@ -970,6 +975,9 @@ class OHLCVManager:
 
         # Download missing daily
         missing_days = filter_missing_days(await self.get_missing_days_ohlcvs(coin))
+        # Exclude current day as Binance archives don't include incomplete days
+        today = ts_to_date(utc_ms())[:10]
+        missing_days = [d for d in missing_days if d < today]
         now_dt = datetime.datetime.utcnow().replace(day=1)
         prev_month_dt = (now_dt - datetime.timedelta(days=1)).replace(day=1)
         recent_months = {
