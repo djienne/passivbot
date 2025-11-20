@@ -1,0 +1,56 @@
+Docker Compose Instructions for docker-compose_HL_data.yml
+===========================================================
+
+STOP the containers:
+-------------------
+docker-compose -f docker-compose_HL_data.yml down
+
+This will:
+- Stop all running containers defined in this compose file
+- Remove the containers
+- Remove the network
+- Keep the volumes (your data is safe)
+
+
+START the containers:
+--------------------
+docker-compose -f docker-compose_HL_data.yml up -d
+
+The -d flag runs containers in detached mode (background)
+
+
+RESTART the containers:
+-----------------------
+Option 1 - Full restart (recommended):
+docker-compose -f docker-compose_HL_data.yml restart
+
+Option 2 - Stop and start:
+docker-compose -f docker-compose_HL_data.yml down
+docker-compose -f docker-compose_HL_data.yml up -d
+
+
+CHECK STATUS:
+-------------
+docker-compose -f docker-compose_HL_data.yml ps
+
+This shows the status of all containers in this compose file
+
+
+VIEW LOGS:
+----------
+docker-compose -f docker-compose_HL_data.yml logs
+
+Add -f to follow logs in real-time:
+docker-compose -f docker-compose_HL_data.yml logs -f
+
+
+REBUILD containers (if you changed the Dockerfile or config):
+-------------------------------------------------------------
+docker-compose -f docker-compose_HL_data.yml up -d --build
+
+
+NOTES:
+------
+- Always use the -f flag to specify the specific compose file
+- Without -f, docker-compose looks for docker-compose.yml by default
+- Your data volumes persist even after 'down' unless you use --volumes flag

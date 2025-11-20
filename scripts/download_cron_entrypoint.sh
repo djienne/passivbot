@@ -2,7 +2,7 @@
 set -e
 
 # Configuration
-COINS="AAVE ADA AVAX BCH BNB BTC DOGE DOT ETH HBAR HYPE LINK LTC SOL SUI TON TRX UNI XLM XRP"
+COINS="AAVE ADA AVAX BCH BNB BTC DOGE DOT ETH HBAR HYPE LINK LTC SOL SUI TON TRX UNI XLM XRP ASTER"
 DAYS_BACK=3
 LOG_FILE="/var/log/hyperliquid_download.log"
 SCRIPT_PATH="/app/src/tools/download_hyperliquid_data.py"
