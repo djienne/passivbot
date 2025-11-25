@@ -14,14 +14,8 @@ services:
       - ./:/app/
       - ./api-keys.json:/app/api-keys.json
     working_dir: /app
-    # Default command runs src/main.py; override as needed
-    # Uses hype_dio.json if it exists, otherwise falls back to template.json
-    command: >
-      bash -c "if [ -f configs/hype_dio.json ]; then
-        python src/main.py configs/hype_dio.json;
-      else
-        python src/main.py configs/template.json;
-      fi"
+    # Default command runs src/main.py with config_hype.json
+    command: python src/main.py configs/config_hype.json
     #command: python src/backtest.py configs/examples/top20mcap.json
     #command: python src/optimize.py configs/template.json
 
