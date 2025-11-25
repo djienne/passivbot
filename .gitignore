@@ -386,3 +386,6 @@ Cargo.lock
 .claude/
 CLAUDE.md
 AGENTS.md
+
+# Security / Credential files
+*.pem
