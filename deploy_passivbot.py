@@ -27,6 +27,7 @@ What gets excluded:
 - Log files (*.log, logs/)
 - SSH keys (*.pem)
 - Historical data and caches (historical_data/, caches/, backtests/)
+  * EXCEPTION: historical_data/ohlcvs_hyperliquid/HYPE is always deployed
 - Test files (tests/, pytest.ini)
 - Optimize results (optimize_results/)
 - IDE settings (.vscode/, .idea/, .claude/)
@@ -364,11 +365,23 @@ def deploy_with_scp():
             if base_name in INCLUDE_ALWAYS:
                 return tarinfo
 
+            # Include historical_data/ohlcvs_hyperliquid/HYPE specifically
+            if 'ohlcvs_hyperliquid/HYPE' in path_str or 'ohlcvs_hyperliquid\\HYPE' in path_str:
+                return tarinfo
+
             for pattern in EXCLUDE_PATTERNS:
                 if pattern.endswith('/'):
                     # Directory pattern - check if directory name matches
                     dir_name = pattern.rstrip('/')
                     if dir_name in path_str.split('/'):
+                        # Special case: allow traversal of historical_data to reach HYPE
+                        if dir_name == 'historical_data':
+                            # Check if this is on the path to HYPE
+                            if path_str == 'passivbot/historical_data' or \
+                               path_str == 'passivbot/historical_data/ohlcvs_hyperliquid' or \
+                               'ohlcvs_hyperliquid/HYPE' in path_str or \
+                               'ohlcvs_hyperliquid\\HYPE' in path_str:
+                                continue  # Don't exclude, continue checking other patterns
                         return None
                 elif '*' in pattern:
                     # Wildcard pattern
