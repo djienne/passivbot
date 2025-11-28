@@ -9,6 +9,7 @@ import re
 import numpy as np
 import dateutil.parser
 import passivbot_rust as pbr
+from utils import symbol_to_coin, date_to_ts
 
 try:
     import pandas as pd
@@ -143,7 +144,10 @@ def get_xk_keys(passivbot_mode="neat_grid"):
         raise Exception(f"unknown passivbot mode {passivbot_mode}")
 
 
-def determine_passivbot_mode(config: dict, skip=[]) -> str:
+def determine_passivbot_mode(config: dict, skip=None) -> str:
+    from config_utils import get_template_config
+    if skip is None:
+        skip = []
     # print('dpm devbug',config)
     if all(k in config["long"] for k in get_template_config("clock")["long"] if k not in skip):
         return "clock"
@@ -250,11 +254,11 @@ def ts_to_date(timestamp: float) -> str:
 def get_day(date):
     # date can be str datetime or float/int timestamp
     try:
-        return ts_to_date_utc(date_to_ts(date))[:10]
+        return ts_to_date(date_to_ts(date))[:10]
     except:
         pass
     try:
-        return ts_to_date_utc(date)[:10]
+        return ts_to_date(date)[:10]
     except:
         pass
     raise Exception(f"failed to get day from {date}")
@@ -276,6 +280,7 @@ def config_pretty_str(config: dict):
 
 
 def candidate_to_live_config(candidate_: dict) -> dict:
+    from config_utils import get_template_config
     result_dict = candidate_["result"] if "result" in candidate_ else candidate_
     candidate = make_compatible(candidate_)
     passivbot_mode = name = determine_passivbot_mode(candidate)
@@ -423,6 +428,7 @@ def filter_orders(
 
 
 def get_dummy_settings(config: dict):
+    from config_utils import get_template_config
     dummy_settings = get_template_config()
     dummy_settings.update({k: 1.0 for k in get_xk_keys()})
     dummy_settings.update(
@@ -1300,6 +1306,7 @@ def get_daily_from_income(
 
 
 def make_compatible(live_config_: dict) -> dict:
+    from config_utils import get_template_config
     live_config = live_config_.copy()
     for src, dst in [
         ("iprice_ema_dist", "initial_eprice_ema_dist"),
@@ -1393,6 +1400,7 @@ def make_compatible(live_config_: dict) -> dict:
 
 
 def strip_config(cfg: dict) -> dict:
+    from config_utils import get_template_config
     pm = determine_passivbot_mode(cfg)
     template = get_template_config(pm)
     for k in template["long"]:
@@ -1932,6 +1940,7 @@ def determine_side_from_order_tuple(order_tuple):
 
 
 def backtested_multiconfig2singleconfig(backtested_config: dict) -> dict:
+    from config_utils import get_template_config
     template = get_template_config("recursive_grid")
     for pside in ["long", "short"]:
         for key, val in [
@@ -1951,6 +1960,7 @@ def backtested_multiconfig2singleconfig(backtested_config: dict) -> dict:
 
 
 def backtested_multiconfig2live_multiconfig(backtested_config: dict) -> dict:
+    from config_utils import get_template_config
     template = get_template_config("multi_hjson")
     template["long_enabled"] = backtested_config["args"]["long_enabled"]
     template["short_enabled"] = backtested_config["args"]["short_enabled"]
@@ -1969,6 +1979,7 @@ def backtested_multiconfig2live_multiconfig(backtested_config: dict) -> dict:
 
 
 def add_missing_params_to_hjson_live_multi_config(config: dict) -> (dict, [str]):
+    from config_utils import get_template_config
     config_copy = deepcopy(config)
     logging_lines = []
     if "approved_symbols" not in config and "symbols" in config:

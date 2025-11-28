@@ -27,6 +27,29 @@ def get_compiled_extension_paths():
 COMPILED_EXTENSION_PATHS = get_compiled_extension_paths()
 
 
+def pid_exists(pid):
+    try:
+        pid = int(pid)
+    except ValueError:
+        return False
+    if os.name == "nt":
+        try:
+            # Use tasklist to check if PID exists on Windows
+            output = subprocess.check_output(
+                f'tasklist /fi "PID eq {pid}"', shell=True
+            ).decode()
+            # If PID exists, it will be in the output
+            return str(pid) in output
+        except Exception:
+            return False
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+
 def acquire_lock():
     start_time = time.time()
     while True:
@@ -34,12 +57,27 @@ def acquire_lock():
             if os.path.exists(LOCK_FILE):
                 # Check if lock is stale
                 if time.time() - os.path.getmtime(LOCK_FILE) > LOCK_TIMEOUT:
-                    print("Found stale lock file. Removing and proceeding with compilation.")
+                    print("Found stale lock file (timeout). Removing and proceeding with compilation.")
                     try:
                         os.remove(LOCK_FILE)
                     except OSError:
                         pass
                 else:
+                    # Check if the process holding the lock still exists
+                    try:
+                        with open(LOCK_FILE, "r") as f:
+                            pid = f.read().strip()
+                        if not pid_exists(pid):
+                            print(f"Lock held by non-existent process {pid}. Removing lock.")
+                            try:
+                                os.remove(LOCK_FILE)
+                            except OSError:
+                                pass
+                            continue
+                    except Exception:
+                        # If we can't read the PID, assume it's corrupt/stale
+                        pass
+
                     if time.time() - start_time > LOCK_TIMEOUT:
                         print("Lock timeout reached. Assuming crashed compilation and proceeding.")
                         try:
@@ -48,7 +86,7 @@ def acquire_lock():
                             pass
                         return True
                     print(
-                        f"Another compilation in progress. Waiting... ({int(time.time() - start_time)}s)"
+                        f"Another compilation in progress (PID {pid}). Waiting... ({int(time.time() - start_time)}s)"
                     )
                     time.sleep(LOCK_CHECK_INTERVAL)
                     continue
@@ -119,7 +157,7 @@ def recompile_rust():
         current_dir = os.getcwd()
         os.chdir(RUST_SOURCE_DIR)
         result = subprocess.run(
-            ["maturin", "develop", "--release"], check=True, capture_output=True, text=True
+            [sys.executable, "-m", "maturin", "develop", "--release"], check=True, capture_output=True, text=True
         )
         os.chdir(current_dir)
         print("Compilation successful.")

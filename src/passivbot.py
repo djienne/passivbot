@@ -1,28 +1,34 @@
 from __future__ import annotations
 import os
-
-# fix Crashes on Windows
-from tools.event_loop_policy import set_windows_event_loop_policy
-
-set_windows_event_loop_policy()
-
-from ccxt.base.errors import NetworkError, RateLimitExceeded
+import sys
 import random
 import traceback
 import argparse
 import asyncio
 import json
-import sys
 import signal
 import hjson
 import pprint
-import numpy as np
 import inspect
-import passivbot_rust as pbr
 import logging
 import math
-from candlestick_manager import CandlestickManager
+import re
+from uuid import uuid4
+from copy import deepcopy
+from collections import defaultdict
 from typing import Dict, Iterable, Tuple, List, Optional
+
+import numpy as np
+from sortedcontainers import SortedDict
+from prettytable import PrettyTable
+from ccxt.base.errors import NetworkError, RateLimitExceeded
+
+# fix Crashes on Windows
+from tools.event_loop_policy import set_windows_event_loop_policy
+set_windows_event_loop_policy()
+
+import passivbot_rust as pbr
+from candlestick_manager import CandlestickManager
 from logging_setup import configure_logging
 from utils import (
     load_markets,
@@ -34,22 +40,8 @@ from utils import (
     format_approved_ignored_coins,
     filter_markets,
     normalize_exchange_name,
+    get_file_mod_ms,
 )
-from prettytable import PrettyTable
-from uuid import uuid4
-from copy import deepcopy
-from collections import defaultdict
-from sortedcontainers import SortedDict
-
-try:
-    import psutil  # type: ignore
-except Exception:
-    psutil = None
-
-try:
-    import resource  # type: ignore
-except Exception:
-    resource = None
 from config_utils import (
     load_config,
     add_arguments_recursively,
@@ -71,10 +63,7 @@ from procedures import (
     get_first_timestamps_unified,
     print_async_exception,
 )
-from utils import get_file_mod_ms
 from downloader import compute_per_coin_warmup_minutes
-import re
-
 from custom_endpoint_overrides import (
     apply_rest_overrides_to_ccxt,
     configure_custom_endpoint_loader,
@@ -82,6 +71,16 @@ from custom_endpoint_overrides import (
     load_custom_endpoint_config,
     resolve_custom_endpoint_override,
 )
+
+try:
+    import psutil  # type: ignore
+except Exception:
+    psutil = None
+
+try:
+    import resource  # type: ignore
+except Exception:
+    resource = None
 
 
 calc_diff = pbr.calc_diff
@@ -790,8 +789,10 @@ class Passivbot:
 
         await asyncio.gather(*(warm_hour(s) for s in symbols))
 
-    async def update_first_timestamps(self, symbols=[]):
+    async def update_first_timestamps(self, symbols=None):
         """Fetch and cache first trade timestamps for the provided symbols."""
+        if symbols is None:
+            symbols = []
         if not hasattr(self, "first_timestamps"):
             self.first_timestamps = {}
         symbols = sorted(set(symbols + flatten(self.approved_coins_minus_ignored_coins.values())))
