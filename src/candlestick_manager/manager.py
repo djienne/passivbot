@@ -49,39 +49,17 @@ import numpy as np
 import portalocker  # type: ignore
 
 
-# ----- Constants and dtypes -----
+# ----- Constants and dtypes (imported from types.py) -----
 
-ONE_MIN_MS = 60_000
-
-_LOCK_TIMEOUT_SECONDS = 10.0
-_LOCK_STALE_SECONDS = 180.0
-_LOCK_BACKOFF_INITIAL = 0.1
-_LOCK_BACKOFF_MAX = 2.0
-
-
-@dataclass
-class _LockRecord:
-    lock: portalocker.Lock
-    count: int
-    acquired_at: float
-
-
-CANDLE_DTYPE = np.dtype(
-    [
-        ("ts", "int64"),
-        ("o", "float32"),
-        ("h", "float32"),
-        ("l", "float32"),
-        ("c", "float32"),
-        ("bv", "float32"),
-    ]
-)
-
-EMA_SERIES_DTYPE = np.dtype(
-    [
-        ("ts", "int64"),
-        ("ema", "float32"),
-    ]
+from .types import (
+    ONE_MIN_MS,
+    _LOCK_TIMEOUT_SECONDS,
+    _LOCK_STALE_SECONDS,
+    _LOCK_BACKOFF_INITIAL,
+    _LOCK_BACKOFF_MAX,
+    _LockRecord,
+    CANDLE_DTYPE,
+    EMA_SERIES_DTYPE,
 )
 
 
