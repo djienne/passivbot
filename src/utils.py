@@ -10,7 +10,6 @@ import inspect
 import time
 from collections import defaultdict
 from typing import Dict, Any, List, Union, Optional
-import re
 import logging
 from copy import deepcopy
 from custom_endpoint_overrides import (

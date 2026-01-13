@@ -60,7 +60,6 @@ from uuid import uuid4
 import logging
 import traceback
 import json
-import pprint
 from deap import base, creator, tools, algorithms
 from contextlib import contextmanager
 import tempfile

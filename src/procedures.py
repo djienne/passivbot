@@ -6,7 +6,6 @@ import asyncio
 from datetime import datetime, timezone
 from time import time
 import numpy as np
-import pprint
 from copy import deepcopy
 import argparse
 import re

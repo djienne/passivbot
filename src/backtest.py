@@ -47,7 +47,6 @@ from pathlib import Path
 from plotting import plot_fills_forager
 from collections import defaultdict
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import logging
 from main import manage_rust_compilation
 import gzip

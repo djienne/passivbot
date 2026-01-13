@@ -3,8 +3,6 @@ from uuid import uuid4
 import passivbot_rust as pbr
 import ccxt.pro as ccxt_pro
 import ccxt.async_support as ccxt_async
-
-import pprint
 import asyncio
 import traceback
 import numpy as np

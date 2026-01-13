@@ -12,7 +12,7 @@ import sys
 import traceback
 import zipfile
 import re
-from collections import deque
+from collections import deque, defaultdict
 from functools import wraps
 from io import BytesIO
 from pathlib import Path
@@ -20,7 +20,6 @@ from time import time
 from typing import List, Dict, Any, Tuple
 from uuid import uuid4
 from urllib.request import urlopen
-from collections import defaultdict
 
 import aiohttp
 import pprint
