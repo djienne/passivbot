@@ -17,6 +17,15 @@ from .datetime_utils import (
     get_utc_now_timestamp,
 )
 
+# Dict utilities
+from .dict_utils import (
+    flatten_dict,
+    sort_dict_keys,
+    remove_OD,
+    dict_keysort,
+    extract_and_sort_by_keys_recursive,
+)
+
 # All other functions from main module
 from .main import (
     safe_filename,
@@ -30,8 +39,6 @@ from .main import (
     candidate_to_live_config,
     unpack_config,
     pack_config,
-    flatten_dict,
-    sort_dict_keys,
     filter_orders,
     get_dummy_settings,
     flatten,
@@ -69,9 +76,6 @@ from .main import (
     backtested_multiconfig2singleconfig,
     backtested_multiconfig2live_multiconfig,
     add_missing_params_to_hjson_live_multi_config,
-    remove_OD,
-    dict_keysort,
-    extract_and_sort_by_keys_recursive,
     hysteresis_rounding,
     log_dict_changes,
 )

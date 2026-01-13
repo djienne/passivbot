@@ -14,6 +14,13 @@ from utils import symbol_to_coin, date_to_ts
 # Import from submodules
 from .type_conversion import numpyize, denumpyize, denanify
 from .datetime_utils import ts_to_date, get_day, get_utc_now_timestamp
+from .dict_utils import (
+    flatten_dict,
+    sort_dict_keys,
+    remove_OD,
+    dict_keysort,
+    extract_and_sort_by_keys_recursive,
+)
 
 try:
     import pandas as pd
@@ -302,25 +309,6 @@ def pack_config(d):
         else:
             new[k] = v
     return new
-
-
-def flatten_dict(d, parent_key="", sep="_"):
-    items = []
-    for k, v in d.items():
-        new_key = parent_key + sep + k if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
-
-
-def sort_dict_keys(d):
-    if isinstance(d, list):
-        return [sort_dict_keys(e) for e in d]
-    if not isinstance(d, dict):
-        return d
-    return {key: sort_dict_keys(d[key]) for key in sorted(d)}
 
 
 def filter_orders(
@@ -1919,39 +1907,6 @@ def add_missing_params_to_hjson_live_multi_config(config: dict) -> (dict, [str])
             logging_lines.append(f"adding missing config param: {key}: {val}")
             config_copy[key] = val
     return config_copy, logging_lines
-
-
-def remove_OD(d: dict) -> dict:
-    if isinstance(d, dict):
-        return {k: remove_OD(v) for k, v in d.items()}
-    if isinstance(d, list):
-        return [remove_OD(x) for x in d]
-    return d
-
-
-def dict_keysort(d: dict):
-    return sorted(d.items(), key=lambda x: x[1])
-
-
-def extract_and_sort_by_keys_recursive(nested_dict):
-    """
-    Extracts values from a nested dictionary of arbitrary depth, sorted by their keys.
-
-    Args:
-    nested_dict (dict): A dictionary where each value may be another dictionary.
-
-    Returns:
-    list: A list of values, where each value is a list of values from inner dictionaries sorted by their keys.
-    """
-    if not isinstance(nested_dict, dict):
-        return nested_dict
-
-    sorted_values = []
-    for key in sorted(nested_dict.keys()):
-        value = nested_dict[key]
-        sorted_values.append(extract_and_sort_by_keys_recursive(value))
-
-    return sorted_values
 
 
 def hysteresis_rounding(balance, last_rounded_balance, percentage=0.02, h=0.5):
