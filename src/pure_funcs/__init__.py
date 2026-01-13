@@ -10,6 +10,13 @@ from .type_conversion import (
     denanify,
 )
 
+# DateTime utilities
+from .datetime_utils import (
+    ts_to_date,
+    get_day,
+    get_utc_now_timestamp,
+)
+
 # All other functions from main module
 from .main import (
     safe_filename,
@@ -19,9 +26,6 @@ from .main import (
     get_xk_keys,
     determine_passivbot_mode,
     create_xk,
-    ts_to_date,
-    get_day,
-    get_utc_now_timestamp,
     config_pretty_str,
     candidate_to_live_config,
     unpack_config,

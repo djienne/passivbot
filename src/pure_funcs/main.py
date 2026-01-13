@@ -13,6 +13,7 @@ from utils import symbol_to_coin, date_to_ts
 
 # Import from submodules
 from .type_conversion import numpyize, denumpyize, denanify
+from .datetime_utils import ts_to_date, get_day, get_utc_now_timestamp
 
 try:
     import pandas as pd
@@ -190,33 +191,6 @@ def create_xk(config: dict) -> dict:
         else:
             raise Exception("failed to create xk", k)
     return xk
-
-
-def ts_to_date(timestamp: float) -> str:
-    if timestamp > 253402297199:
-        return str(datetime.datetime.utcfromtimestamp(timestamp / 1000)).replace(" ", "T")
-    return str(datetime.datetime.utcfromtimestamp(timestamp)).replace(" ", "T")
-
-
-def get_day(date):
-    # date can be str datetime or float/int timestamp
-    try:
-        return ts_to_date(date_to_ts(date))[:10]
-    except:
-        pass
-    try:
-        return ts_to_date(date)[:10]
-    except:
-        pass
-    raise Exception(f"failed to get day from {date}")
-
-
-def get_utc_now_timestamp() -> int:
-    """
-    Creates a millisecond based timestamp of UTC now.
-    :return: Millisecond based timestamp of UTC now.
-    """
-    return int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
 
 
 def config_pretty_str(config: dict):
