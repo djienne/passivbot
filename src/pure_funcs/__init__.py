@@ -26,6 +26,13 @@ from .dict_utils import (
     extract_and_sort_by_keys_recursive,
 )
 
+# Analytics
+from .analytics import (
+    calc_drawdowns,
+    calc_max_drawdown,
+    calc_sharpe_ratio,
+)
+
 # All other functions from main module
 from .main import (
     safe_filename,
@@ -42,9 +49,6 @@ from .main import (
     filter_orders,
     get_dummy_settings,
     flatten,
-    calc_drawdowns,
-    calc_max_drawdown,
-    calc_sharpe_ratio,
     analyze_fills_slim,
     analyze_fills,
     get_empty_analysis,
