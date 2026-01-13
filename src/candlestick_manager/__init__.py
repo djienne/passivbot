@@ -9,9 +9,11 @@ from .types import (
     EMA_SERIES_DTYPE,
     _LockRecord,
 )
+from .utils import (
+    _floor_minute,
+)
 from .manager import (
     CandlestickManager,
-    _floor_minute,
 )
 
 __all__ = [
