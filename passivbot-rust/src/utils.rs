@@ -3,12 +3,14 @@ use crate::types::ExchangeParams;
 use pyo3::prelude::*;
 
 /// Rounds a number to the specified number of decimal places.
+#[inline(always)]
 fn round_to_decimal_places(value: f64, decimal_places: usize) -> f64 {
     let multiplier = 10f64.powi(decimal_places as i32);
     (value * multiplier).round() / multiplier
 }
 
 /// Rounds up a number to the nearest multiple of the given step.
+#[inline]
 #[pyfunction]
 pub fn round_up(n: f64, step: f64) -> f64 {
     let result = (n / step).ceil() * step;
@@ -16,6 +18,7 @@ pub fn round_up(n: f64, step: f64) -> f64 {
 }
 
 /// Rounds a number to the nearest multiple of the given step.
+#[inline]
 #[pyfunction]
 pub fn round_(n: f64, step: f64) -> f64 {
     let result = (n / step).round() * step;
@@ -23,12 +26,14 @@ pub fn round_(n: f64, step: f64) -> f64 {
 }
 
 /// Rounds down a number to the nearest multiple of the given step.
+#[inline]
 #[pyfunction]
 pub fn round_dn(n: f64, step: f64) -> f64 {
     let result = (n / step).floor() * step;
     round_to_decimal_places(result, 10)
 }
 
+#[inline]
 #[pyfunction]
 pub fn round_dynamic(n: f64, d: i32) -> f64 {
     if n == 0.0 {
@@ -40,6 +45,7 @@ pub fn round_dynamic(n: f64, d: i32) -> f64 {
     round_to_decimal_places(result, 10)
 }
 
+#[inline]
 #[pyfunction]
 pub fn round_dynamic_up(n: f64, d: i32) -> f64 {
     if n == 0.0 {
@@ -51,6 +57,7 @@ pub fn round_dynamic_up(n: f64, d: i32) -> f64 {
     round_to_decimal_places(result, 10)
 }
 
+#[inline]
 #[pyfunction]
 pub fn round_dynamic_dn(n: f64, d: i32) -> f64 {
     if n == 0.0 {
@@ -81,6 +88,7 @@ pub fn hysteresis_rounding(
     round_dynamic(rounded_balance, 6)
 }
 
+#[inline]
 #[pyfunction]
 pub fn calc_diff(x: f64, y: f64) -> f64 {
     if y == 0.0 {
@@ -94,6 +102,7 @@ pub fn calc_diff(x: f64, y: f64) -> f64 {
     }
 }
 
+#[inline]
 #[pyfunction]
 pub fn cost_to_qty(cost: f64, price: f64, c_mult: f64) -> f64 {
     if price > 0.0 {
@@ -103,11 +112,13 @@ pub fn cost_to_qty(cost: f64, price: f64, c_mult: f64) -> f64 {
     }
 }
 
+#[inline]
 #[pyfunction]
 pub fn qty_to_cost(qty: f64, price: f64, c_mult: f64) -> f64 {
     (qty.abs() * price) * c_mult
 }
 
+#[inline]
 #[pyfunction]
 pub fn calc_wallet_exposure(
     c_mult: f64,
@@ -121,6 +132,7 @@ pub fn calc_wallet_exposure(
     qty_to_cost(position_size, position_price, c_mult) / balance
 }
 
+#[inline]
 pub fn calc_wallet_exposure_if_filled(
     balance: f64,
     psize: f64,
@@ -136,6 +148,7 @@ pub fn calc_wallet_exposure_if_filled(
     calc_wallet_exposure(exchange_params.c_mult, balance, new_psize, new_pprice)
 }
 
+#[inline]
 #[pyfunction]
 pub fn calc_new_psize_pprice(
     psize: f64,
@@ -160,6 +173,7 @@ pub fn calc_new_psize_pprice(
     )
 }
 
+#[inline(always)]
 fn nan_to_0(value: f64) -> f64 {
     if value.is_nan() {
         0.0
@@ -168,9 +182,24 @@ fn nan_to_0(value: f64) -> f64 {
     }
 }
 
+/// Linear interpolation between two points.
+/// Note: This function uses Lagrange interpolation which works for any number of points,
+/// but is typically called with exactly 2 points (linear interpolation).
+#[inline]
 pub fn interpolate(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
-    assert_eq!(xs.len(), ys.len(), "xs and ys must have the same length");
+    debug_assert_eq!(xs.len(), ys.len(), "xs and ys must have the same length");
 
+    // Fast path for the common case of 2 points (linear interpolation)
+    if xs.len() == 2 {
+        let dx = xs[1] - xs[0];
+        if dx.abs() < f64::EPSILON {
+            return ys[0];
+        }
+        let t = (x - xs[0]) / dx;
+        return ys[0] + t * (ys[1] - ys[0]);
+    }
+
+    // General Lagrange interpolation for other cases
     let n = xs.len();
     let mut result = 0.0;
 
@@ -187,16 +216,19 @@ pub fn interpolate(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
     result
 }
 
+#[inline]
 #[pyfunction]
 pub fn calc_pnl_long(entry_price: f64, close_price: f64, qty: f64, c_mult: f64) -> f64 {
     qty.abs() * c_mult * (close_price - entry_price)
 }
 
+#[inline]
 #[pyfunction]
 pub fn calc_pnl_short(entry_price: f64, close_price: f64, qty: f64, c_mult: f64) -> f64 {
     qty.abs() * c_mult * (entry_price - close_price)
 }
 
+#[inline]
 #[pyfunction]
 pub fn calc_pprice_diff_int(pside: usize, pprice: f64, price: f64) -> f64 {
     match pside {
@@ -218,6 +250,7 @@ pub fn calc_pprice_diff_int(pside: usize, pprice: f64, price: f64) -> f64 {
     }
 }
 
+#[inline]
 #[pyfunction]
 pub fn calc_auto_unstuck_allowance(
     balance: f64,
@@ -232,6 +265,7 @@ pub fn calc_auto_unstuck_allowance(
     (balance_peak * (loss_allowance_pct + drop_since_peak_pct)).max(0.0)
 }
 
+#[inline]
 pub fn calc_ema_price_bid(
     price_step: f64,
     order_book_bid: f64,
@@ -244,6 +278,7 @@ pub fn calc_ema_price_bid(
     )
 }
 
+#[inline]
 pub fn calc_ema_price_ask(
     price_step: f64,
     order_book_ask: f64,

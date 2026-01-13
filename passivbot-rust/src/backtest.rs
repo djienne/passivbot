@@ -1,7 +1,7 @@
 use crate::closes::{
     calc_closes_long, calc_closes_short, calc_next_close_long, calc_next_close_short,
 };
-use crate::constants::{CLOSE, HIGH, LONG, LOW, NO_POS, SHORT, VOLUME};
+use crate::constants::{CLOSE, HIGH, LONG, LOW, NO_POS, SHORT, SPOT_TRADING_FEE_FACTOR, VOLUME};
 use crate::entries::{
     calc_entries_long, calc_entries_short, calc_min_entry_qty, calc_next_entry_long,
     calc_next_entry_short,
@@ -34,7 +34,6 @@ pub struct EmaAlphas {
 #[derive(Clone, Default, Copy, Debug)]
 pub struct Alphas {
     pub alphas: [f64; 3],
-    pub alphas_inv: [f64; 3],
 }
 
 #[derive(Debug)]
@@ -65,23 +64,10 @@ pub struct EMAs {
     pub grid_log_range_short_den: f64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct HourBucket {
     pub high: f64,
     pub low: f64,
-    pub close: f64,
-    pub quote_volume: f64,
-}
-
-impl Default for HourBucket {
-    fn default() -> Self {
-        HourBucket {
-            high: 0.0,
-            low: 0.0,
-            close: 0.0,
-            quote_volume: 0.0,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -299,23 +285,14 @@ impl<'a> Backtest<'a> {
             }
             trade_start_idx[i] = trade_idx;
 
-            let expected_trade_idx = first.saturating_add(warm).min(last);
             debug_assert_eq!(
-                trade_idx, expected_trade_idx,
+                trade_idx,
+                first.saturating_add(warm).min(last),
                 "trade start index mismatch for coin {}: expected {} but got {}",
-                i, expected_trade_idx, trade_idx
+                i,
+                first.saturating_add(warm).min(last),
+                trade_idx
             );
-            let coin_name = backtest_params
-                .coins
-                .get(i)
-                .map(|s| s.as_str())
-                .unwrap_or("<unknown>");
-            /*
-            println!(
-                "[warmup-debug] init coin {} (idx {}): first={} last={} warm_minutes={} trade_start={}",
-                coin_name, i, first, last, warm, trade_idx
-            );
-            */
             trade_activation_logged[i] = false;
         }
 
@@ -493,25 +470,6 @@ impl<'a> Backtest<'a> {
         for k in 1..(n_timesteps - 1) {
             for idx in 0..self.n_coins {
                 if !self.trade_activation_logged[idx] && self.coin_is_tradeable_at(idx, k) {
-                    let coin_name = self
-                        .backtest_params
-                        .coins
-                        .get(idx)
-                        .map(|s| s.as_str())
-                        .unwrap_or("<unknown>");
-                    let first = self.coin_first_valid_idx[idx];
-                    let trade_start = self.coin_trade_start_idx[idx];
-                    /*
-                    println!(
-                        "[warmup-debug] coin {} (idx {}) became tradeable at k={} (first={}, trade_start={}, warmup={})",
-                        coin_name,
-                        idx,
-                        k,
-                        first,
-                        trade_start,
-                        trade_start.saturating_sub(first)
-                    );
-                    */
                     self.trade_activation_logged[idx] = true;
                 }
                 if k < self.coin_trade_start_idx[idx] && self.coin_is_valid_at(idx, k) {
@@ -735,7 +693,7 @@ impl<'a> Backtest<'a> {
                 // Any remaining positive PNL is converted to BTC
                 if pnl > 0.0 {
                     let btc_to_add = pnl / self.btc_usd_prices[k];
-                    self.balance.btc += btc_to_add * 0.999; // apply 0.1% spot trading fee
+                    self.balance.btc += btc_to_add * SPOT_TRADING_FEE_FACTOR;
                 }
             } else if pnl < 0.0 {
                 // Negative PNL directly reduces USD
@@ -1758,7 +1716,6 @@ impl<'a> Backtest<'a> {
                             }
                             let mut h = f64::MIN;
                             let mut l = f64::MAX;
-                            let mut qv = 0.0f64;
                             let mut seen = false;
                             for j in start..=end {
                                 let high = self.hlcvs[[j, i, HIGH]];
@@ -1767,29 +1724,20 @@ impl<'a> Backtest<'a> {
                                 if !(high.is_finite() && low.is_finite() && close.is_finite()) {
                                     continue;
                                 }
-                                let mut qvol = self.hlcvs[[j, i, VOLUME]];
-                                if !qvol.is_finite() || qvol < 0.0 {
-                                    qvol = 0.0;
-                                }
                                 if high > h {
                                     h = high;
                                 }
                                 if low < l {
                                     l = low;
                                 }
-                                qv += qvol;
                                 seen = true;
                             }
                             if !seen {
                                 continue;
                             }
-                            let close = self.hlcvs[[end, i, CLOSE]];
-                            let close = if close.is_finite() { close } else { 0.0 };
                             self.latest_hour[i] = HourBucket {
                                 high: h,
                                 low: l,
-                                close,
-                                quote_volume: qv.max(0.0),
                             };
                         }
                     }
@@ -1927,19 +1875,14 @@ fn calc_ema_alphas(bot_params_pair: &BotParamsPair) -> EmaAlphas {
     ema_spans_short.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
     let ema_alphas_long = ema_spans_long.map(|x| 2.0 / (x + 1.0));
-    let ema_alphas_long_inv = ema_alphas_long.map(|x| 1.0 - x);
-
     let ema_alphas_short = ema_spans_short.map(|x| 2.0 / (x + 1.0));
-    let ema_alphas_short_inv = ema_alphas_short.map(|x| 1.0 - x);
 
     EmaAlphas {
         long: Alphas {
             alphas: ema_alphas_long,
-            alphas_inv: ema_alphas_long_inv,
         },
         short: Alphas {
             alphas: ema_alphas_short,
-            alphas_inv: ema_alphas_short_inv,
         },
         // EMA spans for the volume/log range filters (alphas precomputed from spans)
         vol_alpha_long: 2.0 / (bot_params_pair.long.filter_volume_ema_span as f64 + 1.0),

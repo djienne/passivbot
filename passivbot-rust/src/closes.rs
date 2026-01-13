@@ -1,3 +1,4 @@
+use crate::constants::MAX_GRID_ITERATIONS;
 use crate::entries::calc_min_entry_qty;
 use crate::types::{
     BotParams, ExchangeParams, Order, OrderType, Position, StateParams, TrailingPriceBundle,
@@ -685,7 +686,7 @@ pub fn calc_closes_long(
 ) -> Vec<Order> {
     let mut closes = Vec::<Order>::new();
     let mut psize = position.size;
-    for _ in 0..500 {
+    for _ in 0..MAX_GRID_ITERATIONS {
         let position_mod = Position {
             size: psize,
             price: position.price,
@@ -734,7 +735,7 @@ pub fn calc_closes_short(
 ) -> Vec<Order> {
     let mut closes = Vec::<Order>::new();
     let mut psize = position.size;
-    for _ in 0..500 {
+    for _ in 0..MAX_GRID_ITERATIONS {
         let position_mod = Position {
             size: psize,
             price: position.price,

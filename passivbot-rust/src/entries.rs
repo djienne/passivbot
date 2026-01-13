@@ -1,3 +1,4 @@
+use crate::constants::MAX_GRID_ITERATIONS;
 use crate::types::{
     BotParams, ExchangeParams, Order, OrderType, Position, StateParams, TrailingPriceBundle,
 };
@@ -1022,7 +1023,7 @@ pub fn calc_entries_long(
     let mut psize = position.size;
     let mut pprice = position.price;
     let mut bid = state_params.order_book.bid;
-    for _ in 0..500 {
+    for _ in 0..MAX_GRID_ITERATIONS {
         let position_mod = Position {
             size: psize,
             price: pprice,
@@ -1073,7 +1074,7 @@ pub fn calc_entries_short(
     let mut psize = position.size;
     let mut pprice = position.price;
     let mut ask = state_params.order_book.ask;
-    for _ in 0..500 {
+    for _ in 0..MAX_GRID_ITERATIONS {
         let position_mod = Position {
             size: psize,
             price: pprice,
