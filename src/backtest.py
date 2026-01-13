@@ -254,8 +254,10 @@ def load_coins_hlcvs_from_cache(config, exchange):
     cache_dir = Path("caches") / "hlcvs_data" / cache_hash[:16]
     compress_cache = bool(require_config_value(config, "backtest.compress_cache"))
     if os.path.exists(cache_dir):
-        coins = json.load(open(cache_dir / "coins.json"))
-        mss = json.load(open(cache_dir / "market_specific_settings.json"))
+        with open(cache_dir / "coins.json") as f:
+            coins = json.load(f)
+        with open(cache_dir / "market_specific_settings.json") as f:
+            mss = json.load(f)
         if compress_cache:
             fname = cache_dir / "hlcvs.npy.gz"
             logging.info(f"{exchange} Attempting to load hlcvs data from cache {fname}...")
@@ -330,8 +332,10 @@ def save_coins_hlcvs_to_cache(
     if all((cache_dir / fname).exists() for fname in expected_files):
         return
     logging.info(f"Dumping cache...")
-    json.dump(coins, open(cache_dir / "coins.json", "w"))
-    json.dump(mss, open(cache_dir / "market_specific_settings.json", "w"))
+    with open(cache_dir / "coins.json", "w") as f:
+        json.dump(coins, f)
+    with open(cache_dir / "market_specific_settings.json", "w") as f:
+        json.dump(mss, f)
     uncompressed_size = hlcvs.nbytes
     sts = utc_ms()
     if is_compressed:
@@ -686,7 +690,8 @@ def post_process(
     results_path = make_get_filepath(
         oj(results_path, f"{ts_to_date(utc_ms())[:19].replace(':', '_')}", "")
     )
-    json.dump(analysis, open(f"{results_path}analysis.json", "w"), indent=4, sort_keys=True)
+    with open(f"{results_path}analysis.json", "w") as f:
+        json.dump(analysis, f, indent=4, sort_keys=True)
     config["analysis"] = analysis
     dump_config(config, f"{results_path}config.json")
     fdf.to_csv(f"{results_path}fills.csv")
@@ -714,6 +719,29 @@ def plot_forager(
     plots_dir = make_get_filepath(oj(results_path, "fills_plots", ""))
     quote_ccy = get_quote(exchange)
 
+    # Build informative title from analysis and config
+    analysis = config.get("analysis", {})
+    start_date = require_config_value(config, "backtest.start_date")
+    end_date = require_config_value(config, "backtest.end_date")
+    # Calculate n_days from dates
+    try:
+        start_dt = pd.to_datetime(start_date)
+        end_dt = pd.to_datetime(end_date)
+        n_days = (end_dt - start_dt).days
+    except Exception:
+        n_days = 0
+    # Get n_fills from fills dataframe
+    n_fills = len(fdf) if fdf is not None else 0
+    gain = analysis.get("gain", 0)
+    gain_pct = (gain - 1) * 100 if gain else 0
+    sharpe = analysis.get("sharpe_ratio", 0)
+    adg_w = analysis.get("adg_w", 0) * 100 if analysis.get("adg_w") else 0
+    drawdown_worst = analysis.get("drawdown_worst", 0) * 100 if analysis.get("drawdown_worst") else 0
+    plot_title = (
+        f"{exchange.upper()} | {start_date} to {end_date} ({n_days}d) | Trades: {n_fills}\n"
+        f"Gain: {gain_pct:.1f}% | Sharpe: {sharpe:.3f} | ADG: {adg_w:.2f}% | MaxDD: {drawdown_worst:.1f}%"
+    )
+
     # Convert minute index to datetime if timestamps are available
     if timestamps is not None and len(timestamps) > 0:
         base_ts = int(np.asarray(timestamps)[0])
@@ -736,55 +764,63 @@ def plot_forager(
         )
 
     plt.clf()
-    ax = bal_eq_dt[["balance", "equity"]].plot(logy=False)
+    fig, ax = plt.subplots(figsize=(16, 8))
+    bal_eq_dt[["balance", "equity"]].plot(ax=ax, logy=False)
     ax.set_ylabel(f"Balance ({quote_ccy})")
+    ax.set_title(plot_title, fontsize=11)
     if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
         # Let pandas/matplotlib handle date locator/formatter; just rotate for readability
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-        plt.tight_layout()
     else:
         logging.warning(
             f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
             "skipping datetime formatting"
         )
+    plt.subplots_adjust(top=0.90, bottom=0.12, left=0.08, right=0.97)
     plt.savefig(oj(results_path, "balance_and_equity.png"))
     plt.clf()
-    ax = bal_eq_dt[["balance", "equity"]].plot(logy=True)
+    fig, ax = plt.subplots(figsize=(16, 8))
+    bal_eq_dt[["balance", "equity"]].plot(ax=ax, logy=True)
     ax.set_ylabel(f"Balance ({quote_ccy})")
+    ax.set_title(plot_title, fontsize=11)
     if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-        plt.tight_layout()
     else:
         logging.warning(
             f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
             "skipping datetime formatting"
         )
+    plt.subplots_adjust(top=0.90, bottom=0.12, left=0.08, right=0.97)
     plt.savefig(oj(results_path, "balance_and_equity_logy.png"))
     plt.clf()
     if bool(require_config_value(config, "backtest.use_btc_collateral")):
         plt.clf()
-        ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=False)
+        fig, ax = plt.subplots(figsize=(16, 8))
+        bal_eq_dt[["balance_btc", "equity_btc"]].plot(ax=ax, logy=False)
         ax.set_ylabel("Balance (BTC)")
+        ax.set_title(plot_title, fontsize=11)
         if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
             plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-            plt.tight_layout()
         else:
             logging.warning(
                 f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
                 "skipping datetime formatting"
             )
+        plt.subplots_adjust(top=0.90, bottom=0.12, left=0.08, right=0.97)
         plt.savefig(oj(results_path, "balance_and_equity_btc.png"))
         plt.clf()
-        ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=True)
+        fig, ax = plt.subplots(figsize=(16, 8))
+        bal_eq_dt[["balance_btc", "equity_btc"]].plot(ax=ax, logy=True)
         ax.set_ylabel("Balance (BTC)")
+        ax.set_title(plot_title, fontsize=11)
         if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
             plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-            plt.tight_layout()
         else:
             logging.warning(
                 f"Index is not DatetimeIndex (type: {type(bal_eq_dt.index)}), "
                 "skipping datetime formatting"
             )
+        plt.subplots_adjust(top=0.90, bottom=0.12, left=0.08, right=0.97)
         plt.savefig(oj(results_path, "balance_and_equity_btc_logy.png"))
 
     if not config["disable_plotting"]:

@@ -788,7 +788,8 @@ class OHLCVManager:
         try:
             if os.path.exists(self.cache_filepaths["markets"]):
                 if utc_ms() - get_file_mod_ms(self.cache_filepaths["markets"]) < max_age_ms:
-                    markets = json.load(open(self.cache_filepaths["markets"]))
+                    with open(self.cache_filepaths["markets"]) as f:
+                        markets = json.load(f)
                     if self.verbose:
                         logging.info(f"{self.exchange} Loaded markets from cache")
                     return markets
@@ -800,7 +801,8 @@ class OHLCVManager:
     def dump_markets_to_cache(self):
         if self.markets:
             try:
-                json.dump(self.markets, open(make_get_filepath(self.cache_filepaths["markets"]), "w"))
+                with open(make_get_filepath(self.cache_filepaths["markets"]), "w") as f:
+                    json.dump(self.markets, f)
                 if self.verbose:
                     logging.info(f"{self.exchange} Dumped markets to cache")
             except Exception as e:
@@ -1803,7 +1805,8 @@ class OHLCVManager:
     def load_first_timestamp(self, coin):
         if os.path.exists(self.cache_filepaths["first_timestamps"]):
             try:
-                ftss = json.load(open(self.cache_filepaths["first_timestamps"]))
+                with open(self.cache_filepaths["first_timestamps"]) as f:
+                    ftss = json.load(f)
                 if coin in ftss:
                     return ftss[coin]
             except Exception as e:
@@ -1814,7 +1817,8 @@ class OHLCVManager:
             fpath = self.cache_filepaths["first_timestamps"]
             if os.path.exists(fpath):
                 try:
-                    ftss = json.load(open(fpath))
+                    with open(fpath) as f:
+                        ftss = json.load(f)
                 except Exception as e0:
                     logging.error(f"Error loading {fpath} {e0}")
                     ftss = {}
@@ -1822,7 +1826,8 @@ class OHLCVManager:
                 make_get_filepath(fpath)
                 ftss = {}
             ftss[coin] = fts
-            json.dump(ftss, open(fpath, "w"), indent=True, sort_keys=True)
+            with open(fpath, "w") as f:
+                json.dump(ftss, f, indent=True, sort_keys=True)
             if self.verbose:
                 logging.info(f"{self.exchange} Dumped {fpath}")
         except Exception as e:

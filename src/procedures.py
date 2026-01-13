@@ -29,12 +29,12 @@ import ccxt.async_support as ccxta
 
 try:
     import hjson
-except:
+except ImportError:
     print("hjson not found, trying without...")
     pass
 try:
     import pandas as pd
-except:
+except ImportError:
     print("pandas not found, trying without...")
     pass
 
@@ -66,7 +66,8 @@ def get_all_eligible_symbols(exchange="binance"):
     filepath = make_get_filepath(f"caches/{exchange}/eligible_symbols.json")
     loaded_json = None
     try:
-        loaded_json = json.load(open(filepath))
+        with open(filepath) as f:
+            loaded_json = json.load(f)
         if utc_ms() - get_file_mod_ms(filepath) > 1000 * 60 * 60 * 24:
             print(f"Eligible_symbols cache more than 24h old. Fetching new.")
         else:
@@ -85,7 +86,8 @@ def get_all_eligible_symbols(exchange="binance"):
         ]
         eligible_symbols = sorted(set([x.replace(f"/{quote}:", "") for x in symbols]))
         eligible_symbols = [x for x in eligible_symbols if x]
-        json.dump(eligible_symbols, open(filepath, "w"))
+        with open(filepath, "w") as f:
+            json.dump(eligible_symbols, f)
         return eligible_symbols
     except Exception as e:
         print(f"error fetching eligible symbols {e}")
@@ -154,7 +156,8 @@ def load_user_info(user: str, api_keys_path="api-keys.json") -> dict:
     if api_keys_path is None:
         api_keys_path = "api-keys.json"
     try:
-        api_keys = json.load(open(api_keys_path))
+        with open(api_keys_path) as f:
+            api_keys = json.load(f)
     except Exception as e:
         raise Exception(f"error loading api keys file {api_keys_path} {e}")
     if user not in api_keys:
@@ -179,7 +182,8 @@ def load_exchange_key_secret_passphrase(
     if api_keys_path is None:
         api_keys_path = "api-keys.json"
     try:
-        keyfile = json.load(open(api_keys_path))
+        with open(api_keys_path) as f:
+            keyfile = json.load(f)
         if user in keyfile:
             return (
                 keyfile[user]["exchange"],
@@ -197,7 +201,8 @@ def load_exchange_key_secret_passphrase(
 
 def load_broker_code(exchange: str) -> str:
     try:
-        return hjson.load(open("broker_codes.hjson"))[exchange]
+        with open("broker_codes.hjson") as f:
+            return hjson.load(f)[exchange]
     except Exception as e:
         print(f"failed to load broker code", e)
         traceback.print_exc()

@@ -180,7 +180,8 @@ def dump_plots(
     table = make_table(result)
 
     dump_config(result, result["plots_dirpath"] + "live_config.json")
-    json.dump(denumpyize(result), open(result["plots_dirpath"] + "result.json", "w"), indent=4)
+    with open(result["plots_dirpath"] + "result.json", "w") as f:
+        json.dump(denumpyize(result), f, indent=4)
 
     print("writing backtest_result.txt...\n")
     with open(f"{result['plots_dirpath']}backtest_result.txt", "w") as f:

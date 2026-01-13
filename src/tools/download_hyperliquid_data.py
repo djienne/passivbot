@@ -448,7 +448,8 @@ class HyperliquidDownloader:
         fpath = os.path.join(self.cache_dir, "first_timestamps.json")
         if os.path.exists(fpath):
             try:
-                return json.load(open(fpath))
+                with open(fpath) as f:
+                    return json.load(f)
             except Exception as e:
                 logging.error(f"Error loading first_timestamps.json: {e}")
         return {}
@@ -457,7 +458,8 @@ class HyperliquidDownloader:
         """Save first timestamps cache."""
         fpath = make_get_filepath(os.path.join(self.cache_dir, "first_timestamps.json"))
         try:
-            json.dump(timestamps, open(fpath, "w"), indent=2, sort_keys=True)
+            with open(fpath, "w") as f:
+                json.dump(timestamps, f, indent=2, sort_keys=True)
             logging.info(f"Updated first_timestamps.json")
         except Exception as e:
             logging.error(f"Error saving first_timestamps.json: {e}")

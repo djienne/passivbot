@@ -808,6 +808,15 @@ def parse_limits_string(limits_str: Union[str, dict]) -> dict:
         return {}
     if isinstance(limits_str, dict):
         return limits_str
+    if isinstance(limits_str, list):
+        # Convert list format [{"metric": "gain", "penalize_if": "greater_than", "value": 9.0}]
+        # to dict format {"penalize_if_greater_than_gain": 9.0}
+        result = {}
+        for item in limits_str:
+            if isinstance(item, dict) and "metric" in item and "penalize_if" in item and "value" in item:
+                key = f"penalize_if_{item['penalize_if']}_{item['metric']}"
+                result[key] = item["value"]
+        return result
     tokens = limits_str.replace(":", "").split("--")
     result = {}
     for token in tokens:

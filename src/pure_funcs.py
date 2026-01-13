@@ -13,7 +13,7 @@ from utils import symbol_to_coin, date_to_ts
 
 try:
     import pandas as pd
-except:
+except ImportError:
     print("pandas not found, trying without...")
 
     class PD:
@@ -53,7 +53,6 @@ def calc_spans(min_span: int, max_span: int, n_spans: int) -> np.ndarray:
     return np.array(
         [min_span * ((max_span / min_span) ** (1 / (n_spans - 1))) ** i for i in range(0, n_spans)]
     )
-    return np.array([min_span, (min_span * max_span) ** 0.5, max_span])
 
 
 def get_xk_keys(passivbot_mode="neat_grid"):
@@ -191,9 +190,9 @@ def create_xk(config: dict) -> dict:
 
 
 def numpyize(x):
-    if type(x) in [list, tuple]:
+    if isinstance(x, (list, tuple)):
         return np.array([numpyize(e) for e in x])
-    elif type(x) == dict:
+    elif isinstance(x, dict):
         numpyd = {}
         for k, v in x.items():
             numpyd[k] = numpyize(v)
@@ -203,22 +202,22 @@ def numpyize(x):
 
 
 def denumpyize(x):
-    if type(x) in [np.float64, np.float32, np.float16]:
+    if isinstance(x, (np.float64, np.float32, np.float16)):
         return float(x)
-    elif type(x) in [np.int64, np.int32, np.int16, np.int8]:
+    elif isinstance(x, (np.int64, np.int32, np.int16, np.int8)):
         return int(x)
-    elif type(x) == np.ndarray:
+    elif isinstance(x, np.ndarray):
         return [denumpyize(e) for e in x]
-    elif type(x) == np.bool_:
+    elif isinstance(x, np.bool_):
         return bool(x)
-    elif type(x) in [dict, OrderedDict]:
+    elif isinstance(x, (dict, OrderedDict)):
         denumpyd = {}
         for k, v in x.items():
             denumpyd[k] = denumpyize(v)
         return denumpyd
-    elif type(x) == list:
+    elif isinstance(x, list):
         return [denumpyize(z) for z in x]
-    elif type(x) == tuple:
+    elif isinstance(x, tuple):
         return tuple([denumpyize(z) for z in x])
     else:
         return x
@@ -226,17 +225,17 @@ def denumpyize(x):
 
 def denanify(x, nan=0.0, posinf=0.0, neginf=0.0):
     try:
-        assert type(x) != str
+        assert not isinstance(x, str)
         _ = float(x)
         return np.nan_to_num(x, nan=nan, posinf=posinf, neginf=neginf)
-    except:
-        if type(x) == list:
+    except (AssertionError, TypeError, ValueError):
+        if isinstance(x, list):
             return [denanify(e) for e in x]
-        elif type(x) == tuple:
+        elif isinstance(x, tuple):
             return tuple(denanify(e) for e in x)
-        elif type(x) == np.ndarray:
+        elif isinstance(x, np.ndarray):
             return np.array([denanify(e) for e in x], dtype=x.dtype)
-        elif type(x) == dict:
+        elif isinstance(x, dict):
             denanified = {}
             for k, v in x.items():
                 denanified[k] = denanify(v)
@@ -364,7 +363,7 @@ def pack_config(d):
         d = new
     new = {}
     for k, v in d.items():
-        if type(v) == list:
+        if isinstance(v, list):
             new[k] = np.array(v)
         else:
             new[k] = v
@@ -387,7 +386,7 @@ def flatten_dict(d, parent_key="", sep="_"):
     items = []
     for k, v in d.items():
         new_key = parent_key + sep + k if parent_key else k
-        if type(v) == dict:
+        if isinstance(v, dict):
             items.extend(flatten_dict(v, new_key, sep=sep).items())
         else:
             items.append((new_key, v))
@@ -1190,13 +1189,13 @@ def calc_pprice_long(psize_long, long_pfills):
 
 
 def nullify(x):
-    if type(x) in [list, tuple]:
+    if isinstance(x, (list, tuple)):
         return [nullify(x1) for x1 in x]
-    elif type(x) == np.ndarray:
+    elif isinstance(x, np.ndarray):
         return numpyize([nullify(x1) for x1 in x])
-    elif type(x) == dict:
+    elif isinstance(x, dict):
         return {k: nullify(x[k]) for k in x}
-    elif type(x) in [bool, np.bool_]:
+    elif isinstance(x, (bool, np.bool_)):
         return x
     else:
         return 0.0
@@ -1219,11 +1218,11 @@ def spotify_config(config: dict, nullify_short=True) -> dict:
 
 
 def tuplify(xs, sort=False):
-    if type(xs) in [list]:
+    if isinstance(xs, list):
         if sort:
             return tuple(sorted(tuplify(x, sort=sort) for x in xs))
         return tuple(tuplify(x, sort=sort) for x in xs)
-    elif type(xs) in [dict, OrderedDict]:
+    elif isinstance(xs, (dict, OrderedDict)):
         if sort:
             return tuple(sorted({k: tuplify(v, sort=sort) for k, v in xs.items()}.items()))
         return tuple({k: tuplify(v, sort=sort) for k, v in xs.items()}.items())
@@ -1231,17 +1230,17 @@ def tuplify(xs, sort=False):
 
 
 def round_values(xs, n: int):
-    if type(xs) in [float, np.float64]:
+    if isinstance(xs, (float, np.float64)):
         return pbr.round_dynamic(xs, n)
-    if type(xs) == dict:
+    if isinstance(xs, dict) and not isinstance(xs, OrderedDict):
         return {k: round_values(xs[k], n) for k in xs}
-    if type(xs) == list:
+    if isinstance(xs, list):
         return [round_values(x, n) for x in xs]
-    if type(xs) == np.ndarray:
+    if isinstance(xs, np.ndarray):
         return numpyize([round_values(x, n) for x in xs])
-    if type(xs) == tuple:
+    if isinstance(xs, tuple):
         return tuple([round_values(x, n) for x in xs])
-    if type(xs) == OrderedDict:
+    if isinstance(xs, OrderedDict):
         return OrderedDict([(k, round_values(xs[k], n)) for k in xs])
     return xs
 

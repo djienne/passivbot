@@ -175,5 +175,7 @@ if __name__ == "__main__":
     else:
         fname = args.output
     print(f"Dumping output to {fname}")
-    json.dump(market_caps, open(fname.replace(".json", "_full.json"), "w"))
-    json.dump(list(market_caps), open(fname, "w"))
+    with open(fname.replace(".json", "_full.json"), "w") as f:
+        json.dump(market_caps, f)
+    with open(fname, "w") as f:
+        json.dump(list(market_caps), f)

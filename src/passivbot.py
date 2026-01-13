@@ -1698,7 +1698,8 @@ class Passivbot:
         pnls_cache = []
         if os.path.exists(self.pnls_cache_filepath):
             try:
-                pnls_cache = json.load(open(self.pnls_cache_filepath))
+                with open(self.pnls_cache_filepath) as f:
+                    pnls_cache = json.load(f)
             except Exception as e:
                 logging.error(f"error loading {self.pnls_cache_filepath} {e}")
         if pnls_cache:
@@ -1723,7 +1724,8 @@ class Passivbot:
             pnls_cache = await self.fetch_pnls(start_time=age_limit)
             if pnls_cache:
                 try:
-                    json.dump(pnls_cache, open(self.pnls_cache_filepath, "w"))
+                    with open(self.pnls_cache_filepath, "w") as f:
+                        json.dump(pnls_cache, f)
                 except Exception as e:
                     logging.error(f"error dumping pnls to {self.pnls_cache_filepath} {e}")
         self.pnls = pnls_cache
@@ -1759,7 +1761,8 @@ class Passivbot:
                     f"{len(new_pnls)} new pnl{'s' if len(new_pnls) > 1 else ''} {new_income} {self.quote}"
                 )
             try:
-                json.dump(self.pnls, open(self.pnls_cache_filepath, "w"))
+                with open(self.pnls_cache_filepath, "w") as f:
+                    json.dump(self.pnls, f)
             except Exception as e:
                 logging.error(f"error dumping pnls to {self.pnls_cache_filepath} {e}")
         return True
