@@ -39,6 +39,7 @@ from config_utils import (
 from pure_funcs import (
     safe_filename,
 )
+from passivbot_utils import get_function_name
 from utils import (
     make_get_filepath,
     utc_ms,
@@ -84,10 +85,6 @@ def is_valid_date(date):
         return True
     except:
         return False
-
-
-def get_function_name():
-    return inspect.currentframe().f_back.f_code.co_name
 
 
 def dump_ohlcv_data(data, filepath):

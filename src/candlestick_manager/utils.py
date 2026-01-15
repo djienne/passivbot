@@ -129,7 +129,13 @@ def _ts_index(a: np.ndarray) -> np.ndarray:
 
 
 def _sanitize_symbol(symbol: str) -> str:
-    return symbol.replace("/", "_")
+    """Sanitize symbol name for use in file paths.
+
+    Replaces characters that are invalid in Windows paths:
+    - '/' (forward slash) -> '_'
+    - ':' (colon) -> '_'
+    """
+    return symbol.replace("/", "_").replace(":", "_")
 
 
 def _tf_to_ms(s: Optional[str]) -> int:

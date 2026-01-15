@@ -1,8 +1,8 @@
 mod analysis;
-mod backtest;
+pub mod backtest;
 mod closes;
 mod constants;
-mod entries;
+pub mod entries;
 mod python;
 mod trailing_flip;
 mod types;

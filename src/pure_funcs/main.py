@@ -9,11 +9,12 @@ import re
 import numpy as np
 import dateutil.parser
 import passivbot_rust as pbr
-from utils import symbol_to_coin, date_to_ts
+# Note: symbol_to_coin is imported lazily in backtested_multiconfig2singleconfig()
+# to avoid circular import with utils.py
 
 # Import from submodules
 from .type_conversion import numpyize, denumpyize, denanify
-from .datetime_utils import ts_to_date, get_day, get_utc_now_timestamp
+from .datetime_utils import ts_to_date, get_day, get_utc_now_timestamp, date_to_ts
 from .dict_utils import (
     flatten_dict,
     sort_dict_keys,
@@ -1805,6 +1806,8 @@ def determine_side_from_order_tuple(order_tuple):
 
 def backtested_multiconfig2singleconfig(backtested_config: dict) -> dict:
     from config_utils import get_template_config
+    from utils import symbol_to_coin  # Lazy import to avoid circular dependency
+
     template = get_template_config("recursive_grid")
     for pside in ["long", "short"]:
         for key, val in [

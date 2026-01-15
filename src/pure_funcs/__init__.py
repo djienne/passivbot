@@ -12,6 +12,7 @@ from .type_conversion import (
 
 # DateTime utilities
 from .datetime_utils import (
+    date_to_ts,
     ts_to_date,
     get_day,
     get_utc_now_timestamp,
@@ -24,6 +25,9 @@ from .dict_utils import (
     remove_OD,
     dict_keysort,
     extract_and_sort_by_keys_recursive,
+    compare_dicts,
+    compare_dict_keys,
+    check_keys,
 )
 
 # Analytics
@@ -97,6 +101,7 @@ __all__ = [
     "get_xk_keys",
     "determine_passivbot_mode",
     "create_xk",
+    "date_to_ts",
     "ts_to_date",
     "get_day",
     "get_utc_now_timestamp",
@@ -146,6 +151,9 @@ __all__ = [
     "remove_OD",
     "dict_keysort",
     "extract_and_sort_by_keys_recursive",
+    "compare_dicts",
+    "compare_dict_keys",
+    "check_keys",
     "hysteresis_rounding",
     "log_dict_changes",
 ]

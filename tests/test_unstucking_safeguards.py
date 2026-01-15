@@ -52,10 +52,35 @@ def _make_mock_pbr():
 @pytest.fixture(autouse=True)
 def mock_pbr(monkeypatch):
     stub_module = _make_mock_pbr()
-    monkeypatch.setitem(sys.modules, "passivbot_rust", stub_module)
-    import passivbot
 
+    # Save original modules if they exist
+    saved_modules = {}
+    modules_to_remove = ["passivbot", "passivbot_rust"]
+    for mod_name in modules_to_remove:
+        if mod_name in sys.modules:
+            saved_modules[mod_name] = sys.modules.pop(mod_name)
+
+    # Install the mock
+    sys.modules["passivbot_rust"] = stub_module
+
+    # Import passivbot fresh (it will use the mock passivbot_rust)
+    import passivbot
+    import passivbot_utils
+
+    # Patch pbr in both modules - passivbot_utils.snake_of() uses its own pbr reference
     monkeypatch.setattr(passivbot, "pbr", stub_module, raising=False)
+    monkeypatch.setattr(passivbot_utils, "pbr", stub_module, raising=False)
+
+    yield
+
+    # Cleanup: remove our mock and restore original modules
+    if "passivbot" in sys.modules:
+        del sys.modules["passivbot"]
+    if "passivbot_rust" in sys.modules:
+        del sys.modules["passivbot_rust"]
+
+    for mod_name, mod in saved_modules.items():
+        sys.modules[mod_name] = mod
 
 
 def _dummy_config():

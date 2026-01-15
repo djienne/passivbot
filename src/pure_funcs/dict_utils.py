@@ -57,3 +57,44 @@ def extract_and_sort_by_keys_recursive(nested_dict):
         sorted_values.append(extract_and_sort_by_keys_recursive(value))
 
     return sorted_values
+
+
+def compare_dicts(dict1, dict2, path=""):
+    """Print differences between two nested dictionaries."""
+    for key in sorted(set(dict1.keys()) | set(dict2.keys())):
+        if key not in dict1:
+            print(f"{path}{key}: Missing in first dict. Value in second dict: {dict2[key]}")
+        elif key not in dict2:
+            print(f"{path}{key}: Missing in second dict. Value in first dict: {dict1[key]}")
+        elif isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
+            compare_dicts(dict1[key], dict2[key], f"{path}{key}.")
+        elif dict1[key] != dict2[key]:
+            print(f"{path}{key}: Values differ. First dict:  {dict1[key]} Second dict: {dict2[key]}")
+
+
+def compare_dict_keys(dict1, dict2):
+    """Check if two dictionaries have the same key structure (including nested keys)."""
+    def get_all_keys(d):
+        keys = set(d.keys())
+        for value in d.values():
+            if isinstance(value, dict):
+                keys.update(get_all_keys(value))
+        return keys
+
+    return get_all_keys(dict1) == get_all_keys(dict2)
+
+
+def check_keys(dict0, dict1):
+    """Check if dict0's key structure is a subset of dict1's."""
+    def check_nested(d0, d1):
+        for key, value in d0.items():
+            if key not in d1:
+                return False
+            if isinstance(value, dict):
+                if not isinstance(d1[key], dict):
+                    return False
+                if not check_nested(value, d1[key]):
+                    return False
+        return True
+
+    return check_nested(dict0, dict1)

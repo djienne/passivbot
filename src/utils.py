@@ -16,6 +16,8 @@ from custom_endpoint_overrides import (
     apply_rest_overrides_to_ccxt,
     resolve_custom_endpoint_override,
 )
+from passivbot_utils import get_caller_name
+from pure_funcs.datetime_utils import date_to_ts  # Re-export for backward compatibility
 
 
 logging.basicConfig(
@@ -68,39 +70,6 @@ def ts_to_date(timestamp: Union[float, str, int]) -> str:
 
     # Return ISO format without timezone suffix
     return dt.isoformat().replace("+00:00", "")
-
-
-def date_to_ts(date_str: str) -> float:
-    """
-    Convert a flexible date string to UTC timestamp in milliseconds.
-
-    Args:
-        date_str: Date string in various formats:
-                 - "2020" -> "2020-01-01T00:00:00"
-                 - "2024-04" -> "2024-04-01T00:00:00"
-                 - "2022-04-23" -> "2022-04-23T00:00:00"
-                 - "2021-11-13T03:23:12" (full ISO format)
-                 - And other common variants
-
-    Returns:
-        UTC timestamp in milliseconds as float
-    """
-    date_str = date_str.strip()
-
-    # Use dateutil.parser with default date of Jan 1, 2000 for missing components
-    default_date = datetime.datetime(2000, 1, 1)
-
-    try:
-        dt = dateutil.parser.parse(date_str, default=default_date)
-    except (ValueError, TypeError) as e:
-        raise ValueError(f"Unable to parse date string '{date_str}': {e}")
-
-    # If the datetime is naive (no timezone info), treat it as UTC
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=datetime.timezone.utc)
-
-    # Convert to UTC timestamp in milliseconds
-    return dt.timestamp() * 1000
 
 
 def get_file_mod_ms(filepath):
@@ -520,10 +489,6 @@ def coin_to_symbol(coin, exchange):
             "error with coin_to_symbol %s (raw=%s) %s: %s", coin_sanitized, coin, exchange, e
         )
     return fallback
-
-
-def get_caller_name():
-    return inspect.currentframe().f_back.f_back.f_code.co_name
 
 
 def symbol_to_coin(symbol):

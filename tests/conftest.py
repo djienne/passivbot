@@ -14,6 +14,13 @@ def _install_passivbot_rust_stub():
     if "passivbot_rust" in sys.modules:
         return
 
+    # Try to import the real Rust extension first
+    try:
+        import passivbot_rust
+        return  # Real module available, no stub needed
+    except ImportError:
+        pass  # Real module not available, install stub
+
     stub = types.ModuleType("passivbot_rust")
 
     def _identity(x, *_args, **_kwargs):
