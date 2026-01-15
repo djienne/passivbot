@@ -51,6 +51,7 @@ import logging
 from main import manage_rust_compilation
 import gzip
 import traceback
+from cache_utils import load_numpy_array, save_numpy_array, load_numpy_array_safe
 
 import tempfile
 from contextlib import contextmanager
@@ -192,44 +193,6 @@ def process_forager_fills(fills, coins, hlcvs, equities, equities_btc):
     return fdf, sort_dict_keys(analysis_appendix), bal_eq
 
 
-def compare_dicts(dict1, dict2, path=""):
-    for key in sorted(set(dict1.keys()) | set(dict2.keys())):
-        if key not in dict1:
-            print(f"{path}{key}: Missing in first dict. Value in second dict: {dict2[key]}")
-        elif key not in dict2:
-            print(f"{path}{key}: Missing in second dict. Value in first dict: {dict1[key]}")
-        elif isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
-            compare_dicts(dict1[key], dict2[key], f"{path}{key}.")
-        elif dict1[key] != dict2[key]:
-            print(f"{path}{key}: Values differ. First dict:  {dict1[key]} Second dict: {dict2[key]}")
-
-
-def compare_dict_keys(dict1, dict2):
-    def get_all_keys(d):
-        keys = set(d.keys())
-        for value in d.values():
-            if isinstance(value, dict):
-                keys.update(get_all_keys(value))
-        return keys
-
-    return get_all_keys(dict1) == get_all_keys(dict2)
-
-
-def check_keys(dict0, dict1):
-    def check_nested(d0, d1):
-        for key, value in d0.items():
-            if key not in d1:
-                return False
-            if isinstance(value, dict):
-                if not isinstance(d1[key], dict):
-                    return False
-                if not check_nested(value, d1[key]):
-                    return False
-        return True
-
-    return check_nested(dict0, dict1)
-
-
 def get_cache_hash(config, exchange):
     exchanges_cfg = require_config_value(config, "backtest.exchanges")
     approved_coins = require_live_value(config, "approved_coins")
@@ -257,52 +220,25 @@ def load_coins_hlcvs_from_cache(config, exchange):
             coins = json.load(f)
         with open(cache_dir / "market_specific_settings.json") as f:
             mss = json.load(f)
-        if compress_cache:
-            fname = cache_dir / "hlcvs.npy.gz"
-            logging.info(f"{exchange} Attempting to load hlcvs data from cache {fname}...")
-            with gzip.open(fname, "rb") as f:
-                hlcvs = np.load(f)
-            # Load optional timestamps if present
-            ts_fname = cache_dir / "timestamps.npy.gz"
-            timestamps = None
-            if os.path.exists(ts_fname):
-                try:
-                    with gzip.open(ts_fname, "rb") as f:
-                        timestamps = np.load(f)
-                except Exception:
-                    timestamps = None
-            btc_fname = cache_dir / "btc_usd_prices.npy.gz"
-            if os.path.exists(btc_fname):
-                logging.info(
-                    f"{exchange} Attempting to load BTC/USD prices from cache {btc_fname}..."
-                )
-                with gzip.open(btc_fname, "rb") as f:
-                    btc_usd_prices = np.load(f)
-            else:
-                # Backward compatibility: default to 1.0s if not cached
-                logging.info(f"{exchange} No BTC/USD prices in cache, using default array of 1.0s")
-                btc_usd_prices = np.ones(hlcvs.shape[0], dtype=np.float64)
+
+        ext = ".npy.gz" if compress_cache else ".npy"
+        fname = cache_dir / f"hlcvs{ext}"
+        logging.info(f"{exchange} Attempting to load hlcvs data from cache {fname}...")
+        hlcvs = load_numpy_array(fname, compressed=compress_cache)
+
+        # Load optional timestamps if present
+        ts_fname = cache_dir / f"timestamps{ext}"
+        timestamps = load_numpy_array_safe(ts_fname, compressed=compress_cache)
+
+        # Load BTC/USD prices with fallback to 1.0s
+        btc_fname = cache_dir / f"btc_usd_prices{ext}"
+        if os.path.exists(btc_fname):
+            logging.info(f"{exchange} Attempting to load BTC/USD prices from cache {btc_fname}...")
+            btc_usd_prices = load_numpy_array(btc_fname, compressed=compress_cache)
         else:
-            fname = cache_dir / "hlcvs.npy"
-            logging.info(f"{exchange} Attempting to load hlcvs data from cache {fname}...")
-            hlcvs = np.load(fname)
-            ts_fname = cache_dir / "timestamps.npy"
-            timestamps = None
-            if os.path.exists(ts_fname):
-                try:
-                    timestamps = np.load(ts_fname)
-                except Exception:
-                    timestamps = None
-            btc_fname = cache_dir / "btc_usd_prices.npy"
-            if os.path.exists(btc_fname):
-                logging.info(
-                    f"{exchange} Attempting to load BTC/USD prices from cache {btc_fname}..."
-                )
-                btc_usd_prices = np.load(btc_fname)
-            else:
-                # Backward compatibility: default to 1.0s if not cached
-                logging.info(f"{exchange} No BTC/USD prices in cache, using default array of 1.0s")
-                btc_usd_prices = np.ones(hlcvs.shape[0], dtype=np.float64)
+            logging.info(f"{exchange} No BTC/USD prices in cache, using default array of 1.0s")
+            btc_usd_prices = np.ones(hlcvs.shape[0], dtype=np.float64)
+
         results_path = oj(require_config_value(config, "backtest.base_dir"), exchange, "")
         return cache_dir, coins, hlcvs, mss, results_path, btc_usd_prices, timestamps
     return None
@@ -321,55 +257,48 @@ def save_coins_hlcvs_to_cache(
     cache_dir = Path("caches") / "hlcvs_data" / cache_hash[:16]
     cache_dir.mkdir(parents=True, exist_ok=True)
     is_compressed = bool(require_config_value(config, "backtest.compress_cache"))
-    expected_files = [
-        "coins.json",
-        "hlcvs.npy.gz" if is_compressed else "hlcvs.npy",
-        "btc_usd_prices.npy.gz" if is_compressed else "btc_usd_prices.npy",
-    ]
+    ext = ".npy.gz" if is_compressed else ".npy"
+
+    expected_files = ["coins.json", f"hlcvs{ext}", f"btc_usd_prices{ext}"]
     if timestamps is not None:
-        expected_files.append("timestamps.npy.gz" if is_compressed else "timestamps.npy")
+        expected_files.append(f"timestamps{ext}")
     if all((cache_dir / fname).exists() for fname in expected_files):
         return
+
     logging.info(f"Dumping cache...")
     with open(cache_dir / "coins.json", "w") as f:
         json.dump(coins, f)
     with open(cache_dir / "market_specific_settings.json", "w") as f:
         json.dump(mss, f)
+
     uncompressed_size = hlcvs.nbytes
     sts = utc_ms()
+
+    # Save HLCV data
+    fpath = cache_dir / f"hlcvs{ext}"
+    logging.info(f"Attempting to save hlcvs data to cache {fpath}...")
+    compressed_size = save_numpy_array(fpath, hlcvs, compressed=is_compressed)
+
+    # Save timestamps if provided
+    if timestamps is not None:
+        ts_fpath = cache_dir / f"timestamps{ext}"
+        logging.info(f"Attempting to save timestamps to cache {ts_fpath}...")
+        save_numpy_array(ts_fpath, timestamps, compressed=is_compressed)
+
+    # Save BTC/USD prices
+    btc_fpath = cache_dir / f"btc_usd_prices{ext}"
+    logging.info(f"Attempting to save BTC/USD prices to cache {btc_fpath}...")
+    btc_compressed_size = save_numpy_array(btc_fpath, btc_usd_prices, compressed=is_compressed)
+
     if is_compressed:
-        fpath = cache_dir / "hlcvs.npy.gz"
-        logging.info(f"Attempting to save hlcvs data to cache {fpath}...")
-        with gzip.open(fpath, "wb", compresslevel=1) as f:
-            np.save(f, hlcvs)
-        if timestamps is not None:
-            ts_fpath = cache_dir / "timestamps.npy.gz"
-            logging.info(f"Attempting to save timestamps to cache {ts_fpath}...")
-            with gzip.open(ts_fpath, "wb", compresslevel=1) as f:
-                np.save(f, timestamps)
-        btc_fpath = cache_dir / "btc_usd_prices.npy.gz"
-        logging.info(f"Attempting to save BTC/USD prices to cache {btc_fpath}...")
-        with gzip.open(btc_fpath, "wb", compresslevel=1) as f:
-            np.save(f, btc_usd_prices)
-        compressed_size = (cache_dir / "hlcvs.npy.gz").stat().st_size
-        btc_compressed_size = (cache_dir / "btc_usd_prices.npy.gz").stat().st_size
         line = (
             f"{compressed_size/(1024**3):.2f} GB compressed HLCVs "
             f"({compressed_size/uncompressed_size*100:.1f}%), "
             f"{btc_compressed_size/(1024**3):.2f} GB compressed BTC/USD prices"
         )
     else:
-        fpath = cache_dir / "hlcvs.npy"
-        logging.info(f"Attempting to save hlcvs data to cache {fpath}...")
-        np.save(fpath, hlcvs)
-        if timestamps is not None:
-            ts_fpath = cache_dir / "timestamps.npy"
-            logging.info(f"Attempting to save timestamps to cache {ts_fpath}...")
-            np.save(ts_fpath, timestamps)
-        btc_fpath = cache_dir / "btc_usd_prices.npy"
-        logging.info(f"Attempting to save BTC/USD prices to cache {btc_fpath}...")
-        np.save(btc_fpath, btc_usd_prices)
         line = ""
+
     logging.info(
         f"Successfully dumped hlcvs cache {fpath}: "
         f"{uncompressed_size/(1024**3):.2f} GB uncompressed, "
@@ -736,9 +665,12 @@ def plot_forager(
     sharpe = analysis.get("sharpe_ratio", 0)
     adg_w = analysis.get("adg_w", 0) * 100 if analysis.get("adg_w") else 0
     drawdown_worst = analysis.get("drawdown_worst", 0) * 100 if analysis.get("drawdown_worst") else 0
+    # Get total wallet exposure limits
+    twe_long = float(require_config_value(config, "bot.long.total_wallet_exposure_limit"))
+    twe_short = float(require_config_value(config, "bot.short.total_wallet_exposure_limit"))
     plot_title = (
         f"{exchange.upper()} | {start_date} to {end_date} ({n_days}d) | Trades: {n_fills}\n"
-        f"Gain: {gain_pct:.1f}% | Sharpe: {sharpe:.3f} | ADG: {adg_w:.2f}% | MaxDD: {drawdown_worst:.1f}%"
+        f"Gain: {gain_pct:.1f}% | Sharpe: {sharpe:.3f} | ADG: {adg_w:.2f}% | MaxDD: {drawdown_worst:.1f}% | TWE: L={twe_long:.2f} S={twe_short:.2f}"
     )
 
     # Convert minute index to datetime if timestamps are available
@@ -830,7 +762,7 @@ def plot_forager(
                 fdfc = fdf[fdf.coin == coin]
                 plt.clf()
                 plot_fills_forager(fdfc, hlcvs_df, timestamps)
-                plt.title(f"Fills {coin}")
+                plt.title(f"Fills {coin} | TWE: L={twe_long:.2f} S={twe_short:.2f}")
                 plt.xlabel = "Datetime"
                 plt.ylabel = "Price"
                 plt.savefig(oj(plots_dir, f"{coin}.png"))
