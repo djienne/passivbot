@@ -20,15 +20,16 @@ import json
 import sys
 from pathlib import Path
 from decimal import Decimal, ROUND_UP
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 
 class SimpleBalanceCalculator:
-    def __init__(self, config_path: str, min_order_price: float = None, buffer: float = 0.1):
+    def __init__(self, config_path: str, min_order_price: float = None, buffer: float = 0.1, exchange: str = None):
         self.config_path = Path(config_path)
         self.config = self.load_config()
         self.min_order_price = min_order_price
         self.buffer = buffer
+        self.exchange = exchange or "unknown"
 
     def load_config(self) -> Dict[str, Any]:
         """Load and parse the configuration file."""
@@ -105,6 +106,7 @@ class SimpleBalanceCalculator:
         print(f"PASSIVBOT BALANCE CALCULATOR".center(80))
         print(f"{'='*80}\n")
         print(f"Config: {self.config_path.name}")
+        print(f"Exchange: {self.exchange}")
         print(f"Min Order Price: ${self.min_order_price}")
         print(f"Buffer: {self.buffer * 100:.0f}%")
         print(f"Approved Coins (Long): {', '.join(approved_coins['long']) if approved_coins['long'] else 'None'}")
@@ -134,7 +136,9 @@ class SimpleBalanceCalculator:
 
         print(f"\n{'='*80}")
         print(f"CALCULATION RESULTS".center(80))
-        print(f"{'='*80}\n")
+        print(f"{'='*80}")
+        print(f"Config: {self.config_path.name}")
+        print(f"Exchange: {self.exchange}\n")
 
         max_required = 0
         max_side = None
@@ -185,17 +189,107 @@ class SimpleBalanceCalculator:
         print()
 
 
+EXCHANGE_MIN_ORDER_PRICES = {
+    "bybit": 5.0,
+    "binance": 5.0,
+    "hyperliquid": 10.0,
+}
+
+EXCHANGE_ALIASES = {
+    "hl": "hyperliquid",
+    "hyper": "hyperliquid",
+}
+
+
+def select_exchange() -> str:
+    """Present a list of exchanges and let the user choose one."""
+    exchanges = list(EXCHANGE_MIN_ORDER_PRICES.keys())
+
+    print("\nAvailable exchanges:")
+    print("-" * 50)
+    for i, exchange in enumerate(exchanges, 1):
+        min_price = EXCHANGE_MIN_ORDER_PRICES[exchange]
+        print(f"  {i}. {exchange:<15} (min order: ${min_price:.0f})")
+    print("-" * 50)
+
+    while True:
+        try:
+            choice = input(f"\nSelect exchange (1-{len(exchanges)}): ").strip()
+            if not choice:
+                continue
+            index = int(choice) - 1
+            if 0 <= index < len(exchanges):
+                selected = exchanges[index]
+                print(f"\nSelected: {selected}")
+                return selected
+            else:
+                print(f"Please enter a number between 1 and {len(exchanges)}")
+        except ValueError:
+            print("Please enter a valid number")
+        except EOFError:
+            print("\nSelection cancelled")
+            sys.exit(1)
+
+
+def normalize_exchange(exchange: str) -> str:
+    """Normalize exchange name (handle aliases like 'hl' -> 'hyperliquid')."""
+    exchange = exchange.lower()
+    return EXCHANGE_ALIASES.get(exchange, exchange)
+
+
+def list_config_files(config_dir: str = "configs") -> List[Path]:
+    """List all JSON config files in the configs directory."""
+    config_path = Path(config_dir)
+    if not config_path.exists():
+        return []
+    return sorted(config_path.glob("*.json"))
+
+
+def select_config_file() -> str:
+    """Present a list of config files and let the user choose one."""
+    config_files = list_config_files()
+
+    if not config_files:
+        print("Error: No config files found in 'configs' directory")
+        sys.exit(1)
+
+    print("\nAvailable config files:")
+    print("-" * 50)
+    for i, config_file in enumerate(config_files, 1):
+        print(f"  {i:3}. {config_file.name}")
+    print("-" * 50)
+
+    while True:
+        try:
+            choice = input(f"\nSelect config file (1-{len(config_files)}): ").strip()
+            if not choice:
+                continue
+            index = int(choice) - 1
+            if 0 <= index < len(config_files):
+                selected = config_files[index]
+                print(f"\nSelected: {selected}")
+                return str(selected)
+            else:
+                print(f"Please enter a number between 1 and {len(config_files)}")
+        except ValueError:
+            print("Please enter a valid number")
+        except EOFError:
+            print("\nSelection cancelled")
+            sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Calculate required balance for a passivbot configuration (simple version)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  python calculate_balance_simple.py
   python calculate_balance_simple.py --config configs/config_hype.json --min-price 11
   python calculate_balance_simple.py --config configs/config_hype.json --min-price 11 --buffer 0.2
 
 The calculator will:
-  1. Read your config file
+  1. Read your config file (or let you choose one interactively)
   2. Use the provided min_order_price (or default $10)
   3. Calculate minimum required balance
   4. Add a safety buffer (default 10%)
@@ -206,15 +300,22 @@ The calculator will:
     parser.add_argument(
         "--config",
         "-c",
-        required=True,
-        help="Path to passivbot config file (e.g., configs/config_hype.json)"
+        required=False,
+        help="Path to passivbot config file (if not specified, shows a list to choose from)"
+    )
+
+    parser.add_argument(
+        "--exchange",
+        "-e",
+        type=str,
+        help="Exchange (bybit, binance, hl/hyperliquid). Determines default min order price."
     )
 
     parser.add_argument(
         "--min-price",
         "-m",
         type=float,
-        help="Minimum order price in USDT (e.g., 11 for HYPE)"
+        help="Minimum order price in USDT (overrides exchange default)"
     )
 
     parser.add_argument(
@@ -227,11 +328,26 @@ The calculator will:
 
     args = parser.parse_args()
 
+    # If no config specified, let user choose interactively
+    config_path = args.config if args.config else select_config_file()
+
+    # If no exchange specified, let user choose interactively
+    if args.exchange:
+        exchange = normalize_exchange(args.exchange)
+    else:
+        exchange = select_exchange()
+
+    # Use exchange default min_order_price if not specified
+    min_order_price = args.min_price
+    if min_order_price is None:
+        min_order_price = EXCHANGE_MIN_ORDER_PRICES.get(exchange, 10.0)
+
     try:
         calculator = SimpleBalanceCalculator(
-            config_path=args.config,
-            min_order_price=args.min_price,
-            buffer=args.buffer
+            config_path=config_path,
+            min_order_price=min_order_price,
+            buffer=args.buffer,
+            exchange=exchange
         )
 
         results = calculator.calculate()

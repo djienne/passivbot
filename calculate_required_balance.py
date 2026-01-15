@@ -84,21 +84,32 @@ class BalanceCalculator:
     def fetch_symbol_info(self, symbol: str) -> Dict[str, Any]:
         """Fetch symbol information from exchange."""
         try:
-            # Ensure symbol is in CCXT format (e.g., HYPE/USDT:USDT for futures)
-            if '/' not in symbol:
-                symbol_formatted = f"{symbol}/USDT:USDT"
-            else:
-                symbol_formatted = symbol
+            # Strip common quote currency suffixes to get base currency
+            base = symbol
+            for suffix in ["USDT", "USDC", "USD", "BUSD"]:
+                if base.endswith(suffix):
+                    base = base[:-len(suffix)]
+                    break
 
             # Load markets
             self.exchange.load_markets()
 
-            # Get market info
-            if symbol_formatted not in self.exchange.markets:
-                # Try without :USDT suffix for some exchanges
-                symbol_formatted = f"{symbol}/USDT"
-                if symbol_formatted not in self.exchange.markets:
-                    return None
+            # Try different symbol formats for ccxt
+            symbol_candidates = [
+                f"{base}/USDT:USDT",  # Bybit perpetual format
+                f"{base}/USDT",       # Spot format
+                f"{symbol}",          # Original symbol as-is
+            ]
+
+            symbol_formatted = None
+            for candidate in symbol_candidates:
+                if candidate in self.exchange.markets:
+                    symbol_formatted = candidate
+                    break
+
+            if symbol_formatted is None:
+                print(f"Warning: Symbol {symbol} not found in {self.exchange_id} markets")
+                return None
 
             market = self.exchange.markets[symbol_formatted]
 
@@ -272,18 +283,101 @@ class BalanceCalculator:
         print()
 
 
+SUPPORTED_EXCHANGES = ["bybit", "binance", "hyperliquid"]
+
+EXCHANGE_ALIASES = {
+    "hl": "hyperliquid",
+    "hyper": "hyperliquid",
+}
+
+
+def select_exchange() -> str:
+    """Present a list of exchanges and let the user choose one."""
+    print("\nAvailable exchanges:")
+    print("-" * 50)
+    for i, exchange in enumerate(SUPPORTED_EXCHANGES, 1):
+        print(f"  {i}. {exchange}")
+    print("-" * 50)
+
+    while True:
+        try:
+            choice = input(f"\nSelect exchange (1-{len(SUPPORTED_EXCHANGES)}): ").strip()
+            if not choice:
+                continue
+            index = int(choice) - 1
+            if 0 <= index < len(SUPPORTED_EXCHANGES):
+                selected = SUPPORTED_EXCHANGES[index]
+                print(f"\nSelected: {selected}")
+                return selected
+            else:
+                print(f"Please enter a number between 1 and {len(SUPPORTED_EXCHANGES)}")
+        except ValueError:
+            print("Please enter a valid number")
+        except EOFError:
+            print("\nSelection cancelled")
+            sys.exit(1)
+
+
+def normalize_exchange(exchange: str) -> str:
+    """Normalize exchange name (handle aliases like 'hl' -> 'hyperliquid')."""
+    exchange = exchange.lower()
+    return EXCHANGE_ALIASES.get(exchange, exchange)
+
+
+def list_config_files(config_dir: str = "configs") -> List[Path]:
+    """List all JSON config files in the configs directory."""
+    config_path = Path(config_dir)
+    if not config_path.exists():
+        return []
+    return sorted(config_path.glob("*.json"))
+
+
+def select_config_file() -> str:
+    """Present a list of config files and let the user choose one."""
+    config_files = list_config_files()
+
+    if not config_files:
+        print("Error: No config files found in 'configs' directory")
+        sys.exit(1)
+
+    print("\nAvailable config files:")
+    print("-" * 50)
+    for i, config_file in enumerate(config_files, 1):
+        print(f"  {i:3}. {config_file.name}")
+    print("-" * 50)
+
+    while True:
+        try:
+            choice = input(f"\nSelect config file (1-{len(config_files)}): ").strip()
+            if not choice:
+                continue
+            index = int(choice) - 1
+            if 0 <= index < len(config_files):
+                selected = config_files[index]
+                print(f"\nSelected: {selected}")
+                return str(selected)
+            else:
+                print(f"Please enter a number between 1 and {len(config_files)}")
+        except ValueError:
+            print("Please enter a valid number")
+        except EOFError:
+            print("\nSelection cancelled")
+            sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Calculate required balance for a passivbot configuration",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  python calculate_required_balance.py
   python calculate_required_balance.py --config configs/config_hype.json
   python calculate_required_balance.py --config configs/config_hype.json --exchange bybit
   python calculate_required_balance.py --config configs/config_hype.json --buffer 0.2
 
 The calculator will:
-  1. Read your config file
+  1. Read your config file (or let you choose one interactively)
   2. Fetch current market data from the exchange
   3. Calculate minimum required balance
   4. Add a safety buffer (default 10%)
@@ -294,14 +388,14 @@ The calculator will:
     parser.add_argument(
         "--config",
         "-c",
-        required=True,
-        help="Path to passivbot config file (e.g., configs/config_hype.json)"
+        required=False,
+        help="Path to passivbot config file (if not specified, shows a list to choose from)"
     )
 
     parser.add_argument(
         "--exchange",
         "-e",
-        help="Exchange to use (default: first exchange from config backtest.exchanges)"
+        help="Exchange to use (bybit, binance, hl/hyperliquid). If not specified, shows a list to choose from."
     )
 
     parser.add_argument(
@@ -314,10 +408,19 @@ The calculator will:
 
     args = parser.parse_args()
 
+    # If no config specified, let user choose interactively
+    config_path = args.config if args.config else select_config_file()
+
+    # If no exchange specified, let user choose interactively
+    if args.exchange:
+        exchange = normalize_exchange(args.exchange)
+    else:
+        exchange = select_exchange()
+
     try:
         calculator = BalanceCalculator(
-            config_path=args.config,
-            exchange_id=args.exchange,
+            config_path=config_path,
+            exchange_id=exchange,
             buffer=args.buffer
         )
 
