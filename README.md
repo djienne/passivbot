@@ -46,6 +46,8 @@ Passivbot manages underperforming, or "stuck", positions by realizing small loss
 
 This fork is tuned for Windows. The steps below assume PowerShell on Windows 10/11.
 
+> **Quick Start:** For a streamlined installation guide, see [WINDOWS_INSTALLATION_GUIDE.md](WINDOWS_INSTALLATION_GUIDE.md).
+
 ### 1. Clone the Repository
 
 Open PowerShell, then clone this Windows-optimised fork:
@@ -92,6 +94,12 @@ With the venv active, install dependencies for this fork:
 ```powershell
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+```
+
+**Windows DNS Fix:** The `aiodns` package (installed as a ccxt dependency) can cause DNS resolution failures on Windows. Uninstall it to use Python's built-in resolver instead:
+
+```powershell
+pip uninstall aiodns -y
 ```
 
 ### 5. Install Rust and Build the Rust Extension
