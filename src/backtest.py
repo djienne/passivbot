@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import os
 import json
+import shutil
 import passivbot_rust as pbr
 from tools.event_loop_policy import set_windows_event_loop_policy
 
@@ -700,6 +701,18 @@ def post_process(
         hlcvs,
         timestamps,
     )
+    base_dir = require_config_value(config, "backtest.base_dir")
+    root_dir = base_dir.replace("\\", "/").split("/")[0]
+    copy_to_latest(results_path, root_dir)
+
+
+def copy_to_latest(results_path, base_dir):
+    latest_dir = os.path.join(base_dir, "latest")
+    if os.path.exists(latest_dir):
+        shutil.rmtree(latest_dir)
+    shutil.copytree(results_path, latest_dir)
+    logging.info(f"Backtest results saved to {results_path}")
+    logging.info(f"Copied backtest results to {latest_dir}")
 
 
 def plot_forager(
@@ -735,8 +748,16 @@ def plot_forager(
             f"Using minute indices for x-axis."
         )
 
+    # Compute USD stats for plot titles
+    bal = bal_eq_dt["balance"]
+    eq = bal_eq_dt["equity"]
+    usd_pnl_pct = (bal.iloc[-1] - bal.iloc[0]) / bal.iloc[0] * 100
+    usd_max_dd = ((eq - eq.cummax()) / eq.cummax()).min() * 100
+    usd_title = f"PnL: {usd_pnl_pct:+.1f}%  |  Max DD: {usd_max_dd:.1f}%"
+
     plt.clf()
     ax = bal_eq_dt[["balance", "equity"]].plot(logy=False)
+    ax.set_title(usd_title)
     ax.set_ylabel(f"Balance ({quote_ccy})")
     if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
         # Let pandas/matplotlib handle date locator/formatter; just rotate for readability
@@ -750,6 +771,7 @@ def plot_forager(
     plt.savefig(oj(results_path, "balance_and_equity.png"))
     plt.clf()
     ax = bal_eq_dt[["balance", "equity"]].plot(logy=True)
+    ax.set_title(usd_title)
     ax.set_ylabel(f"Balance ({quote_ccy})")
     if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
@@ -762,8 +784,15 @@ def plot_forager(
     plt.savefig(oj(results_path, "balance_and_equity_logy.png"))
     plt.clf()
     if bool(require_config_value(config, "backtest.use_btc_collateral")):
+        bal_btc = bal_eq_dt["balance_btc"]
+        eq_btc = bal_eq_dt["equity_btc"]
+        btc_pnl_pct = (bal_btc.iloc[-1] - bal_btc.iloc[0]) / bal_btc.iloc[0] * 100
+        btc_max_dd = ((eq_btc - eq_btc.cummax()) / eq_btc.cummax()).min() * 100
+        btc_title = f"PnL: {btc_pnl_pct:+.1f}%  |  Max DD: {btc_max_dd:.1f}%"
+
         plt.clf()
         ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=False)
+        ax.set_title(btc_title)
         ax.set_ylabel("Balance (BTC)")
         if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
             plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
@@ -776,6 +805,7 @@ def plot_forager(
         plt.savefig(oj(results_path, "balance_and_equity_btc.png"))
         plt.clf()
         ax = bal_eq_dt[["balance_btc", "equity_btc"]].plot(logy=True)
+        ax.set_title(btc_title)
         ax.set_ylabel("Balance (BTC)")
         if isinstance(bal_eq_dt.index, pd.DatetimeIndex):
             plt.setp(ax.get_xticklabels(), rotation=45, ha="right")

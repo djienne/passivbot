@@ -10,9 +10,14 @@ Usage:
     python calculate_balance_simple.py --config configs/config_hype.json --min-price 11
     python calculate_balance_simple.py --config configs/config_hype.json --buffer 0.2
 
-The calculator uses the formula from pbgui:
+The calculator uses the formula:
     wallet_exposure_per_position = total_wallet_exposure_limit / n_positions
     required_balance = min_order_price / (wallet_exposure_per_position * entry_initial_qty_pct)
+
+NOTE: This simple calculator cannot verify min_qty constraints or apply exchange-specific
+min_cost defaults without live exchange data. The real trading engine computes:
+    effective_min_cost = max(min_qty * price * contract_size, min_cost)
+For accurate results, prefer the full calculator: calculate_required_balance.py
 """
 
 import argparse
@@ -182,6 +187,10 @@ class SimpleBalanceCalculator:
         print("  - Grid entries (DCA) will use more capital as position grows")
         print(f"  - Position can grow up to {max_side['wallet_exposure_per_position']:.2f}x wallet balance")
         print(f"  - With leverage {self.config.get('live', {}).get('leverage', 10)}x, you need ~{max_side['wallet_exposure_per_position']/self.config.get('live', {}).get('leverage', 10)*100:.1f}% of exposure as margin")
+        print()
+        print("  NOTE: This simple calculator does not verify min_qty * price constraints")
+        print("  or apply exchange-specific min_cost defaults. For accurate results,")
+        print("  use: python calculate_required_balance.py --config <config>")
         print()
 
 
