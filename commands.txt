@@ -1,0 +1,61 @@
+Passivbot v7 - Basic Commands
+==============================
+
+Config file: configs/config_hype.json
+
+--- SETUP (one-time) ---
+
+# Create the conda environment with Python 3.10
+conda create -n passivbot python=3.10 -y
+
+# Activate it
+conda activate passivbot
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Remove aiodns (c-ares DNS fails on Windows; aiohttp falls back to ThreadedResolver)
+pip uninstall aiodns pycares -y
+
+# Build the Rust extension
+cd passivbot-rust
+maturin develop --release
+cd ..
+
+--- USAGE ---
+
+# Activate the conda environment first
+conda activate passivbot
+
+--- BACKTEST ---
+
+# Run a backtest with the HYPE config
+python src/backtest.py configs/config_hype.json
+
+# Run a backtest without generating plots
+python src/backtest.py configs/config_hype.json -dp
+
+# Run a backtest with verbose debug logging (0=warnings, 1=info, 2=debug, 3=trace)
+python src/backtest.py configs/config_hype.json --debug-level 2
+
+--- OPTIMIZE ---
+
+# Run the optimizer with the HYPE config
+python src/optimize.py configs/config_hype.json
+
+# Override number of CPUs and iterations from CLI
+python src/optimize.py configs/config_hype.json --optimize.n_cpus 4 --optimize.iters 100000
+
+# Override population size
+python src/optimize.py configs/config_hype.json --optimize.population_size 500
+
+--- LIVE ---
+
+# Run the bot live (compiles Rust extension if needed)
+python src/main.py configs/config_hype.json
+
+# Run live with debug logging
+python src/main.py configs/config_hype.json --debug-level 2
+
+# Run live with logging to file
+python run_with_logging.py python src/main.py configs/config_hype.json
