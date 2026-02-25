@@ -1,5 +1,16 @@
 import re
 import json
+import aiohttp
+import aiohttp.connector as _aiohttp_connector
+
+# On Windows, aiodns/pycares cannot contact DNS servers via the async resolver.
+# Patch aiohttp to use ThreadedResolver (socket.getaddrinfo in a thread pool)
+# before ccxt is imported so every TCPConnector it creates uses the working resolver.
+import sys as _sys
+
+if _sys.platform == "win32":
+    _aiohttp_connector.DefaultResolver = aiohttp.ThreadedResolver
+
 import ccxt.async_support as ccxt
 import os
 import datetime
