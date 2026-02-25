@@ -383,6 +383,7 @@ Cargo.lock
 /optimize_results
 !/historical_data/ohlcvs_hyperliquid/
 !/configs/test_hyperliquid_btc_aggressive.json
+!/configs/config_hype.json
 .claude/
 CLAUDE.md
 AGENTS.md
