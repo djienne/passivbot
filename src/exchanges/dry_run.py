@@ -12,9 +12,12 @@ Usage (handled automatically by setup_bot when live.dry_run is true):
 """
 
 import asyncio
+import itertools
 import logging
 
 from utils import utc_ms
+
+_dry_run_id_counter = itertools.count()
 
 
 class DryRunMixin:
@@ -36,10 +39,110 @@ class DryRunMixin:
             self._dry_run_balance = 10000.0
         # {(symbol, pside): {"size": float, "price": float}}
         self._dry_run_positions = {}
+        # {order_id: order_dict} — pending limit orders waiting to be matched
+        self._dry_run_open_orders: dict = {}
         self._dry_run_initialized = True
         logging.info(
             f"[DRY RUN] paper wallet initialised at {self._dry_run_balance} USDT"
         )
+
+    def _get_fee_rate(self, symbol: str) -> float:
+        try:
+            return self.markets_dict[symbol].get("maker", 0.0002) or 0.0002
+        except Exception:
+            return 0.0002
+
+    def _dry_run_fill_order(self, order: dict, fill_price: float):
+        """Apply a filled limit order to paper state (synchronous)."""
+        symbol = order["symbol"]
+        pside = order.get("position_side", "long")
+        qty = abs(order.get("qty", order.get("amount", 0.0)))
+        reduce_only = order.get("reduce_only", False)
+        c_mult = self.c_mults.get(symbol, 1.0) if hasattr(self, "c_mults") else 1.0
+        fee_rate = self._get_fee_rate(symbol)
+        fee = fill_price * qty * c_mult * fee_rate
+        self._dry_run_balance -= fee
+
+        key = (symbol, pside)
+
+        if reduce_only:
+            # Closing an existing position — realise PnL
+            pos = self._dry_run_positions.get(key, {"size": 0.0, "price": 0.0})
+            entry_price = pos["price"]
+            if pside == "long":
+                pnl = (fill_price - entry_price) * qty * c_mult
+            else:
+                pnl = (entry_price - fill_price) * qty * c_mult
+            self._dry_run_balance += pnl
+            old_size = pos["size"]
+            new_size = old_size - qty
+            if new_size < 0.0:
+                logging.warning(
+                    f"[DRY RUN] close {pside} {symbol}: close qty={qty} exceeds "
+                    f"position size={old_size:.6f}; clamping to zero"
+                )
+                new_size = 0.0
+            if new_size == 0.0:
+                self._dry_run_positions.pop(key, None)
+            else:
+                self._dry_run_positions[key] = {"size": new_size, "price": entry_price}
+
+            self.pnls.append(
+                {
+                    "id": f"dry_run_{next(_dry_run_id_counter)}",
+                    "symbol": symbol,
+                    "timestamp": float(utc_ms()),
+                    "pnl": pnl - fee,
+                    "position_side": pside,
+                    "qty": qty,
+                    "price": fill_price,
+                    "side": order["side"],
+                }
+            )
+            logging.info(
+                f"[DRY RUN] fill (close) {pside} {symbol} qty={qty} @ {fill_price}"
+                f"  pnl={pnl:.4f}  fee={fee:.4f}  balance={self._dry_run_balance:.2f}"
+            )
+        else:
+            # Opening / adding to a position — update weighted average entry
+            pos = self._dry_run_positions.get(key, {"size": 0.0, "price": 0.0})
+            old_size = pos["size"]
+            new_size = old_size + qty
+            if new_size > 0:
+                new_price = (pos["price"] * old_size + fill_price * qty) / new_size
+            else:
+                new_price = fill_price
+            self._dry_run_positions[key] = {"size": new_size, "price": new_price}
+            logging.info(
+                f"[DRY RUN] fill (entry) {pside} {symbol} qty={qty} @ {fill_price}"
+                f"  fee={fee:.4f}  pos_size={new_size:.6f}  avg_price={new_price:.4f}"
+                f"  balance={self._dry_run_balance:.2f}"
+            )
+
+    async def _dry_run_match_orders(self):
+        """Match pending limit orders against current market prices."""
+        if not self._dry_run_open_orders:
+            return
+        if not hasattr(self, "cm"):
+            return  # called before cm is ready; skip silently
+        symbols = {o["symbol"] for o in self._dry_run_open_orders.values()}
+        try:
+            last_prices = await self.cm.get_last_prices(symbols, max_age_ms=10_000)
+        except Exception:
+            return
+        filled_ids = []
+        for order_id, order in list(self._dry_run_open_orders.items()):
+            last_price = last_prices.get(order["symbol"])
+            if not last_price:
+                continue
+            side = order["side"]        # "buy" or "sell"
+            limit_price = order["price"]
+            if (side == "buy" and last_price <= limit_price) or \
+               (side == "sell" and last_price >= limit_price):
+                self._dry_run_fill_order(order, fill_price=limit_price)
+                filled_ids.append(order_id)
+        for oid in filled_ids:
+            self._dry_run_open_orders.pop(oid, None)
 
     # ------------------------------------------------------------------ #
     #  Overridden private endpoints                                        #
@@ -64,69 +167,42 @@ class DryRunMixin:
         return positions, self._dry_run_balance
 
     async def fetch_open_orders(self, symbol=None):
-        """All orders are immediately filled; there are never open orders."""
-        return []
+        """Run the matching engine then return remaining pending orders."""
+        self._ensure_dry_run_state()
+        await self._dry_run_match_orders()
+        orders = list(self._dry_run_open_orders.values())
+        if symbol is not None:
+            orders = [o for o in orders if o["symbol"] == symbol]
+        return orders
 
     async def execute_order(self, order: dict) -> dict:
-        """Simulate an immediate fill at limit price and update paper state."""
+        """Place a limit order into the in-memory order book (not filled immediately)."""
         self._ensure_dry_run_state()
-
-        symbol = order["symbol"]
-        pside = order.get("position_side", "long")
+        order_id = f"dry_run_{next(_dry_run_id_counter)}"
         qty = abs(order.get("qty", order.get("amount", 0.0)))
-        price = float(order["price"])
-        reduce_only = order.get("reduce_only", False)
-        c_mult = self.c_mults.get(symbol, 1.0) if hasattr(self, "c_mults") else 1.0
-
-        key = (symbol, pside)
-
-        if reduce_only:
-            # Closing an existing position — realise PnL
-            pos = self._dry_run_positions.get(key, {"size": 0.0, "price": 0.0})
-            entry_price = pos["price"]
-            if pside == "long":
-                pnl = (price - entry_price) * qty * c_mult
-            else:
-                pnl = (entry_price - price) * qty * c_mult
-            self._dry_run_balance += pnl
-            new_size = max(0.0, pos["size"] - qty)
-            if new_size == 0.0:
-                self._dry_run_positions.pop(key, None)
-            else:
-                self._dry_run_positions[key] = {"size": new_size, "price": entry_price}
-            logging.debug(
-                f"[DRY RUN] close {pside} {symbol} qty={qty} @ {price}"
-                f"  pnl={pnl:.4f}  balance={self._dry_run_balance:.2f}"
-            )
-        else:
-            # Opening / adding to a position — update weighted average entry
-            pos = self._dry_run_positions.get(key, {"size": 0.0, "price": 0.0})
-            old_size = pos["size"]
-            new_size = old_size + qty
-            if new_size > 0:
-                new_price = (pos["price"] * old_size + price * qty) / new_size
-            else:
-                new_price = price
-            self._dry_run_positions[key] = {"size": new_size, "price": new_price}
-            logging.debug(
-                f"[DRY RUN] entry {pside} {symbol} qty={qty} @ {price}"
-                f"  pos_size={new_size:.6f}  avg_price={new_price:.4f}"
-            )
-
-        return {
-            "id": f"dry_run_{utc_ms()}",
-            "symbol": symbol,
+        pending = {
+            "id": order_id,
+            "symbol": order["symbol"],
             "side": order.get("side", ""),
-            "price": price,
+            "position_side": order.get("position_side", "long"),
+            "qty": qty,
+            "price": float(order["price"]),
             "amount": qty,
-            "filled": qty,
-            "remaining": 0.0,
-            "status": "closed",
+            "reduce_only": order.get("reduce_only", False),
             "timestamp": utc_ms(),
+            "status": "open",
         }
+        self._dry_run_open_orders[order_id] = pending
+        logging.info(
+            f"[DRY RUN] placed {pending['side']} {pending['position_side']}"
+            f" {pending['symbol']} qty={qty} @ {pending['price']}"
+        )
+        return {**pending, "filled": 0.0, "remaining": qty}
 
     async def execute_cancellation(self, order: dict) -> dict:
-        """Simulate order cancellation (nothing to cancel in dry-run)."""
+        """Remove a pending order from the in-memory order book."""
+        self._ensure_dry_run_state()
+        self._dry_run_open_orders.pop(order.get("id", ""), None)
         return {"id": order.get("id", ""), "symbol": order.get("symbol", ""), "status": "canceled"}
 
     async def fetch_pnls(self, start_time=None, end_time=None, limit=None):
@@ -135,7 +211,9 @@ class DryRunMixin:
 
     async def init_pnls(self):
         """Skip fetching PnL history; start with an empty list."""
-        self.pnls = []
+        if not hasattr(self, "pnls"):
+            self.pnls = []
+        # already initialized — preserve accumulated dry-run fills
 
     # ------------------------------------------------------------------ #
     #  Exchange config calls that would touch private endpoints            #
