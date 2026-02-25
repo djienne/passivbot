@@ -33,7 +33,7 @@
     },
     "hyperliquid_01" : {
         "exchange": "hyperliquid",
-        "0x7a3B1eF9cD28F4E2bA90c5D8fE61234ABcDef56": "0x7a3B1eF9cD28F4E2bA90c5D8fE61234ABcDef56",
+        "wallet_address": "wallet_address",
         "private_key": "private_key",
         "is_vault": false
     },
@@ -41,10 +41,5 @@
         "exchange": "gateio",
         "key": "key",
         "secret": "secret"
-    },
-    "dry_run_bybit": {
-        "exchange": "bybit",
-        "key": "",
-        "secret": ""
     }
 }
