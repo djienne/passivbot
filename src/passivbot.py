@@ -3042,38 +3042,46 @@ def setup_bot(config):
     if user_info["exchange"] == "bybit":
         from exchanges.bybit import BybitBot
 
-        bot = BybitBot(config)
+        BotClass = BybitBot
     elif user_info["exchange"] == "bitget":
         from exchanges.bitget import BitgetBot
 
-        bot = BitgetBot(config)
+        BotClass = BitgetBot
     elif user_info["exchange"] == "binance":
         from exchanges.binance import BinanceBot
 
-        bot = BinanceBot(config)
+        BotClass = BinanceBot
     elif user_info["exchange"] == "okx":
         from exchanges.okx import OKXBot
 
-        bot = OKXBot(config)
+        BotClass = OKXBot
     elif user_info["exchange"] == "hyperliquid":
         from exchanges.hyperliquid import HyperliquidBot
 
-        bot = HyperliquidBot(config)
+        BotClass = HyperliquidBot
     elif user_info["exchange"] == "gateio":
         from exchanges.gateio import GateIOBot
 
-        bot = GateIOBot(config)
+        BotClass = GateIOBot
     elif user_info["exchange"] == "defx":
         from exchanges.defx import DefxBot
 
-        bot = DefxBot(config)
+        BotClass = DefxBot
     elif user_info["exchange"] == "kucoin":
         from exchanges.kucoin import KucoinBot
 
-        bot = KucoinBot(config)
+        BotClass = KucoinBot
     else:
         raise Exception(f"unknown exchange {user_info['exchange']}")
-    return bot
+
+    dry_run = bool(get_optional_config_value(config, "live.dry_run", False))
+    if dry_run:
+        from exchanges.dry_run import DryRunMixin
+
+        logging.warning("[DRY RUN] Paper trading mode active — no real orders will be placed")
+        BotClass = type(f"DryRun{BotClass.__name__}", (DryRunMixin, BotClass), {})
+
+    return BotClass(config)
 
 
 async def shutdown_bot(bot):
