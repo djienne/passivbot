@@ -60,28 +60,28 @@ class DryRunMixin:
         reduce_only = order.get("reduce_only", False)
         c_mult = self.c_mults.get(symbol, 1.0) if hasattr(self, "c_mults") else 1.0
         fee_rate = self._get_fee_rate(symbol)
-        fee = fill_price * qty * c_mult * fee_rate
-        self._dry_run_balance -= fee
 
         key = (symbol, pside)
 
         if reduce_only:
-            # Closing an existing position — realise PnL
+            # Closing an existing position — clamp qty, realise PnL
             pos = self._dry_run_positions.get(key, {"size": 0.0, "price": 0.0})
-            entry_price = pos["price"]
-            if pside == "long":
-                pnl = (fill_price - entry_price) * qty * c_mult
-            else:
-                pnl = (entry_price - fill_price) * qty * c_mult
-            self._dry_run_balance += pnl
             old_size = pos["size"]
-            new_size = old_size - qty
-            if new_size < 0.0:
+            effective_qty = min(qty, old_size)
+            if qty > old_size:
                 logging.warning(
                     f"[DRY RUN] close {pside} {symbol}: close qty={qty} exceeds "
                     f"position size={old_size:.6f}; clamping to zero"
                 )
-                new_size = 0.0
+            entry_price = pos["price"]
+            fee = fill_price * effective_qty * c_mult * fee_rate
+            self._dry_run_balance -= fee
+            if pside == "long":
+                pnl = (fill_price - entry_price) * effective_qty * c_mult
+            else:
+                pnl = (entry_price - fill_price) * effective_qty * c_mult
+            self._dry_run_balance += pnl
+            new_size = old_size - effective_qty  # always >= 0
             if new_size == 0.0:
                 self._dry_run_positions.pop(key, None)
             else:
@@ -94,17 +94,19 @@ class DryRunMixin:
                     "timestamp": float(utc_ms()),
                     "pnl": pnl - fee,
                     "position_side": pside,
-                    "qty": qty,
+                    "qty": effective_qty,
                     "price": fill_price,
                     "side": order["side"],
                 }
             )
             logging.info(
-                f"[DRY RUN] fill (close) {pside} {symbol} qty={qty} @ {fill_price}"
+                f"[DRY RUN] fill (close) {pside} {symbol} qty={effective_qty} @ {fill_price}"
                 f"  pnl={pnl:.4f}  fee={fee:.4f}  balance={self._dry_run_balance:.2f}"
             )
         else:
             # Opening / adding to a position — update weighted average entry
+            fee = fill_price * qty * c_mult * fee_rate
+            self._dry_run_balance -= fee
             pos = self._dry_run_positions.get(key, {"size": 0.0, "price": 0.0})
             old_size = pos["size"]
             new_size = old_size + qty
@@ -176,7 +178,7 @@ class DryRunMixin:
         return orders
 
     async def execute_order(self, order: dict) -> dict:
-        """Place a limit order into the in-memory order book (not filled immediately)."""
+        """Place an order; market orders are filled immediately, limit orders are queued."""
         self._ensure_dry_run_state()
         order_id = f"dry_run_{next(_dry_run_id_counter)}"
         qty = abs(order.get("qty", order.get("amount", 0.0)))
@@ -192,6 +194,24 @@ class DryRunMixin:
             "timestamp": utc_ms(),
             "status": "open",
         }
+
+        # Immediate fill for market orders
+        if order.get("type") == "market" and hasattr(self, "cm"):
+            try:
+                prices = await self.cm.get_last_prices(
+                    {order["symbol"]}, max_age_ms=10_000
+                )
+                fill_price = prices.get(order["symbol"])
+                if fill_price:
+                    self._dry_run_fill_order(pending, fill_price)
+                    logging.info(
+                        f"[DRY RUN] market fill {pending['side']} {pending['position_side']}"
+                        f" {pending['symbol']} qty={qty} @ {fill_price}"
+                    )
+                    return {**pending, "filled": qty, "remaining": 0.0, "status": "closed"}
+            except Exception:
+                pass  # fall through to limit queue
+
         self._dry_run_open_orders[order_id] = pending
         logging.info(
             f"[DRY RUN] placed {pending['side']} {pending['position_side']}"
