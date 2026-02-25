@@ -446,6 +446,15 @@ def ensure_millis(df):
     return df
 
 
+def _clamp_end_date(end_date_str):
+    """Ensure end_date is no later than yesterday UTC (latest complete day)."""
+    yesterday = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    if end_date_str > yesterday:
+        logging.info(f"Clamping end_date from {end_date_str} to {yesterday} (latest complete day)")
+        return yesterday
+    return end_date_str
+
+
 class OHLCVManager:
     """
     Manages OHLCVs for multiple exchanges.
@@ -463,7 +472,7 @@ class OHLCVManager:
         self.exchange = normalize_exchange_name(exchange)
         self.quote = get_quote(exchange)
         self.start_date = "2020-01-01" if start_date is None else format_end_date(start_date)
-        self.end_date = format_end_date("now" if end_date is None else end_date)
+        self.end_date = _clamp_end_date(format_end_date("now" if end_date is None else end_date))
         self.start_ts = date_to_ts(self.start_date)
         self.end_ts = date_to_ts(self.end_date)
         self.cc = cc
@@ -499,7 +508,7 @@ class OHLCVManager:
                 self.end_date = new_end_date
             else:
                 raise Exception(f"invalid end date {new_end_date}")
-            self.end_date = format_end_date(self.end_date)
+            self.end_date = _clamp_end_date(format_end_date(self.end_date))
             self.end_ts = date_to_ts(self.end_date)
 
     def get_symbol(self, coin):
