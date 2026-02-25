@@ -143,6 +143,8 @@
     "coin_overrides": {},
     "disable_plotting": false,
     "live": {
+        "dry_run": true,
+        "dry_run_wallet": 10000.0,
         "approved_coins": {
             "long": [
                 "HYPE"

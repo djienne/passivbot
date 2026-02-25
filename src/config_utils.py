@@ -1207,6 +1207,8 @@ def get_template_config(passivbot_mode="v7"):
         "live": {
             "approved_coins": {"long": [], "short": []},
             "auto_gs": True,
+            "dry_run": False,
+            "dry_run_wallet": 10000.0,
             "inactive_coin_candle_ttl_minutes": 10.0,
             "empty_means_all_approved": False,
             "execution_delay_seconds": 2.0,
