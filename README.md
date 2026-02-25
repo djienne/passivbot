@@ -199,6 +199,39 @@ The default configuration runs `configs/hype_dio.json` (not included in reposito
 - Docker and Docker Compose installed on your system
 - Valid API keys configured in `api-keys.json` (the config specifies which exchange user to use)
 
+## Dry-Run (Paper Trading) Mode
+
+Passivbot supports a dry-run mode that simulates trading in-memory against live market data, without placing real orders. This is useful for testing configs before committing real funds.
+
+### Enabling Dry-Run Mode
+
+Add these two keys to the `live` section of your config JSON:
+
+```json
+"live": {
+    "dry_run": true,
+    "dry_run_wallet": 10000.0,
+    ...
+}
+```
+
+- `dry_run` — set to `true` to activate paper trading.
+- `dry_run_wallet` — starting simulated balance (default: 10000.0 USDC).
+
+Then run normally:
+
+```powershell
+python src/main.py configs/your_config.json
+```
+
+You should see `[DRY RUN] Paper trading mode active` and `[DRY RUN] paper wallet initialised at 10000.0 USDT` in the logs. No real API credentials are required in dry-run mode.
+
+### Switching to Real Trading
+
+1. Edit `api-keys.json` with your real exchange credentials (wallet address and private key for Hyperliquid, or API key/secret for other exchanges).
+2. Set `"dry_run": false` (or remove the key entirely) in your config.
+3. Restart the bot.
+
 ## Requirements
 
 - Python 3.10 (recommended; this Windows fork is optimized for 3.10)
