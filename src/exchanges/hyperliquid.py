@@ -8,7 +8,13 @@ import traceback
 import json
 import numpy as np
 import passivbot_rust as pbr
-from utils import ts_to_date, symbol_to_coin, coin_to_symbol, utc_ms
+from utils import (
+    ts_to_date,
+    symbol_to_coin,
+    coin_to_symbol,
+    utc_ms,
+    disable_hyperliquid_spot_markets,
+)
 from config_utils import require_live_value
 from pure_funcs import (
     multi_replace,
@@ -50,13 +56,23 @@ class HyperliquidBot(Passivbot):
             "privateKey": self.user_info["private_key"],
         }
         if self.ws_enabled:
-            self.ccp = getattr(ccxt_pro, self.exchange)(creds)
+            self.ccp = getattr(ccxt_pro, self.exchange)(
+                {
+                    **creds,
+                    "streaming": {
+                        "keepAlive": 15000,
+                        "maxPingPongMisses": 3.0,
+                    },
+                }
+            )
             self.ccp.options["defaultType"] = "swap"
+            disable_hyperliquid_spot_markets(self.ccp)
             self._apply_endpoint_override(self.ccp)
         elif self.endpoint_override:
             logging.info("Skipping Hyperliquid websocket session due to custom endpoint override.")
         self.cca = getattr(ccxt_async, self.exchange)(creds)
         self.cca.options["defaultType"] = "swap"
+        disable_hyperliquid_spot_markets(self.cca)
         self._apply_endpoint_override(self.cca)
 
     def set_market_specific_settings(self):
@@ -94,7 +110,7 @@ class HyperliquidBot(Passivbot):
                     res[i]["qty"] = res[i]["amount"]
                 self.handle_order_update(res)
             except Exception as e:
-                logging.error(f"exception watch_orders {res} {e}")
+                logging.error(f"exception watch_orders {e}")
                 traceback.print_exc()
                 await asyncio.sleep(1)
 

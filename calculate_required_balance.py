@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Passivbot Balance Calculator - Command Line Version (Hyperliquid)
+Passivbot Balance Calculator - Command Line Version
 
 Calculates the minimum required balance for a given passivbot configuration.
 
 Usage:
     python calculate_required_balance.py --config configs/config_hype.json
+    python calculate_required_balance.py --config configs/config_hype.json --exchange bybit
     python calculate_required_balance.py --config configs/config_hype.json --buffer 0.2  # 20% buffer
 
-The calculator uses the formula matching the real trading engine (src/passivbot.py):
-    effective_min_cost = max(min_qty * price * contract_size, min_cost)
+The calculator uses the formula from pbgui:
     wallet_exposure_per_position = total_wallet_exposure_limit / n_positions
-    required_balance = effective_min_cost / (wallet_exposure_per_position * entry_initial_qty_pct)
+    required_balance = min_order_price / (wallet_exposure_per_position * entry_initial_qty_pct)
 
-Hyperliquid min_cost default (10.0) and multiplier (1.01) are applied to match live behavior.
+Based on: pbgui/pbgui/balance_calculator.py
 """
 
 import argparse
@@ -32,10 +32,10 @@ except ImportError:
 
 
 class BalanceCalculator:
-    def __init__(self, config_path: str, buffer: float = 0.1):
+    def __init__(self, config_path: str, exchange_id: str = None, buffer: float = 0.1):
         self.config_path = Path(config_path)
         self.config = self.load_config()
-        self.exchange_id = "hyperliquid"
+        self.exchange_id = exchange_id or self.get_default_exchange()
         self.buffer = buffer
         self.exchange = self.init_exchange()
 
@@ -52,6 +52,13 @@ class BalanceCalculator:
             print(f"Error: Invalid JSON in config file: {e}")
             sys.exit(1)
 
+    def get_default_exchange(self) -> str:
+        """Get the default exchange from config."""
+        exchanges = self.config.get("backtest", {}).get("exchanges", [])
+        if exchanges:
+            return exchanges[0]
+        return "binance"  # fallback
+
     def init_exchange(self) -> ccxt.Exchange:
         """Initialize the ccxt exchange."""
         try:
@@ -66,17 +73,6 @@ class BalanceCalculator:
             print(f"Available exchanges: {', '.join(ccxt.exchanges[:10])}...")
             sys.exit(1)
 
-    def _apply_exchange_min_cost_default(self, min_cost) -> float:
-        """Apply Hyperliquid min_cost default matching real trading code.
-
-        When ccxt returns None for min_cost, default to 10.0.
-        Then multiply by 1.01 (see src/exchanges/hyperliquid.py:70).
-        """
-        if min_cost is None:
-            min_cost = 10.0
-        min_cost = round(min_cost * 1.01, 2)
-        return min_cost
-
     def get_approved_coins(self) -> Dict[str, List[str]]:
         """Get approved coins from config."""
         approved = self.config.get("live", {}).get("approved_coins", {})
@@ -88,13 +84,9 @@ class BalanceCalculator:
     def fetch_symbol_info(self, symbol: str) -> Dict[str, Any]:
         """Fetch symbol information from exchange."""
         try:
-            # Normalize coin name: strip quote suffixes (e.g., HYPEUSDT -> HYPE)
-            # Matches src/utils.py symbol_to_coin() logic
-            coin = symbol
-            if '/' not in coin:
-                for suffix in ["USDT", "USDC", "BUSD", "USD", ":"]:
-                    coin = coin.replace(suffix, "")
-                symbol_formatted = f"{coin}/USDC:USDC"
+            # Ensure symbol is in CCXT format (e.g., HYPE/USDT:USDT for futures)
+            if '/' not in symbol:
+                symbol_formatted = f"{symbol}/USDT:USDT"
             else:
                 symbol_formatted = symbol
 
@@ -103,8 +95,8 @@ class BalanceCalculator:
 
             # Get market info
             if symbol_formatted not in self.exchange.markets:
-                # Try without :USDC suffix
-                symbol_formatted = f"{coin}/USDC"
+                # Try without :USDT suffix for some exchanges
+                symbol_formatted = f"{symbol}/USDT"
                 if symbol_formatted not in self.exchange.markets:
                     return None
 
@@ -114,22 +106,17 @@ class BalanceCalculator:
             ticker = self.exchange.fetch_ticker(symbol_formatted)
             price = ticker['last']
 
-            # Get minimum order cost and amount from exchange
-            min_cost = market.get('limits', {}).get('cost', {}).get('min')
-            min_amount = market.get('limits', {}).get('amount', {}).get('min')
-            contract_size = market.get('contractSize', 1) or 1
+            # Get minimum order cost
+            min_cost = market.get('limits', {}).get('cost', {}).get('min', 0)
+            min_amount = market.get('limits', {}).get('amount', {}).get('min', 0)
 
-            # Apply exchange-specific min_cost defaults (matching real trading code)
-            min_cost = self._apply_exchange_min_cost_default(min_cost)
-
-            # Calculate effective_min_cost matching real trading code:
-            #   effective_min_cost = max(qty_to_cost(min_qty, price, c_mult), min_cost)
-            # This uses max() of both constraints, not if/elif
-            min_cost_from_qty = (min_amount * price * contract_size) if (min_amount and min_amount > 0 and price) else 0
-            min_cost_flat = min_cost if (min_cost and min_cost > 0) else 0
-            min_order_price = max(min_cost_from_qty, min_cost_flat)
-            if min_order_price <= 0:
-                min_order_price = 5.0  # fallback
+            # Calculate min_order_price (minimum order value in quote currency)
+            if min_cost and min_cost > 0:
+                min_order_price = min_cost
+            elif min_amount and min_amount > 0:
+                min_order_price = min_amount * price
+            else:
+                min_order_price = 5.0  # Default fallback
 
             return {
                 "symbol": symbol,
@@ -206,10 +193,10 @@ class BalanceCalculator:
             symbol_info = self.fetch_symbol_info(coin)
 
             if not symbol_info:
-                print("FAILED")
+                print("❌ Failed")
                 continue
 
-            print("OK")
+            print("✓")
 
             # Calculate for long side
             if coin in approved_coins["long"]:
@@ -242,9 +229,9 @@ class BalanceCalculator:
         print(f"Buffer: {self.buffer * 100:.0f}%\n")
 
         # Print detailed calculation for highest requirement
-        print("-" * 100)
+        print("─" * 100)
         print(f"HIGHEST REQUIREMENT: {highest['symbol']} ({highest['side'].upper()} side)".center(100))
-        print("-" * 100)
+        print("─" * 100)
         print(f"  Current Price:                     ${highest['current_price']:.4f}")
         print(f"  Minimum Order Price:               ${highest['min_order_price']:.2f}")
         print(f"  Total Wallet Exposure Limit:       {highest['total_wallet_exposure_limit']:.2f}")
@@ -252,26 +239,26 @@ class BalanceCalculator:
         print(f"  Entry Initial Qty %:               {highest['entry_initial_qty_pct']:.4f} ({highest['entry_initial_qty_pct']*100:.2f}%)")
         print(f"  Wallet Exposure per Position:      {highest['wallet_exposure_per_position']:.4f}")
         print()
-        print(f"  Formula: min_order_price / (wallet_exposure_per_position x entry_initial_qty_pct)")
-        print(f"  Calculation: {highest['min_order_price']:.2f} / ({highest['wallet_exposure_per_position']:.4f} x {highest['entry_initial_qty_pct']:.4f})")
+        print(f"  Formula: min_order_price / (wallet_exposure_per_position × entry_initial_qty_pct)")
+        print(f"  Calculation: {highest['min_order_price']:.2f} / ({highest['wallet_exposure_per_position']:.4f} × {highest['entry_initial_qty_pct']:.4f})")
         print(f"  = {highest['min_order_price']:.2f} / {highest['wallet_exposure_per_position'] * highest['entry_initial_qty_pct']:.6f}")
         print(f"  = ${highest['required_balance']:.2f}")
         print()
-        print(f"  -> Required Balance (minimum):      ${highest['required_balance']:.2f}")
-        print(f"  -> Recommended Balance (+{self.buffer*100:.0f}%):      ${highest['recommended_balance']:.0f} USDT")
-        print("-" * 100)
+        print(f"  ➜ Required Balance (minimum):      ${highest['required_balance']:.2f}")
+        print(f"  ➜ Recommended Balance (+{self.buffer*100:.0f}%):      ${highest['recommended_balance']:.0f} USDT")
+        print("─" * 100)
 
         # Print summary table for all coins
         if len(results) > 1:
             print("\nALL COINS SUMMARY:")
-            print("-" * 100)
+            print("─" * 100)
             print(f"{'Symbol':<10} {'Side':<6} {'Price':<12} {'Min Order':<12} {'Required':<14} {'Recommended':<14}")
-            print("-" * 100)
+            print("─" * 100)
 
             for r in sorted(results, key=lambda x: x['required_balance'], reverse=True):
                 print(f"{r['symbol']:<10} {r['side']:<6} ${r['current_price']:<11.4f} ${r['min_order_price']:<11.2f} ${r['required_balance']:<13.2f} ${r['recommended_balance']:<13.0f}")
 
-            print("-" * 100)
+            print("─" * 100)
 
         print("\n" + "=" * 100)
         print(f"FINAL RECOMMENDATION: Start with at least ${highest['recommended_balance']:.0f} USDT".center(100))
@@ -287,16 +274,17 @@ class BalanceCalculator:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Calculate required balance for a passivbot configuration (Hyperliquid)",
+        description="Calculate required balance for a passivbot configuration",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python calculate_required_balance.py --config configs/config_hype.json
+  python calculate_required_balance.py --config configs/config_hype.json --exchange bybit
   python calculate_required_balance.py --config configs/config_hype.json --buffer 0.2
 
 The calculator will:
   1. Read your config file
-  2. Fetch current market data from Hyperliquid
+  2. Fetch current market data from the exchange
   3. Calculate minimum required balance
   4. Add a safety buffer (default 10%)
   5. Show detailed breakdown and recommendation
@@ -308,6 +296,12 @@ The calculator will:
         "-c",
         required=True,
         help="Path to passivbot config file (e.g., configs/config_hype.json)"
+    )
+
+    parser.add_argument(
+        "--exchange",
+        "-e",
+        help="Exchange to use (default: first exchange from config backtest.exchanges)"
     )
 
     parser.add_argument(
@@ -323,6 +317,7 @@ The calculator will:
     try:
         calculator = BalanceCalculator(
             config_path=args.config,
+            exchange_id=args.exchange,
             buffer=args.buffer
         )
 

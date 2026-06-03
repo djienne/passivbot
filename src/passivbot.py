@@ -1,34 +1,28 @@
 from __future__ import annotations
 import os
-import sys
+
+# fix Crashes on Windows
+from tools.event_loop_policy import set_windows_event_loop_policy
+
+set_windows_event_loop_policy()
+
+from ccxt.base.errors import NetworkError, RateLimitExceeded
 import random
 import traceback
 import argparse
 import asyncio
 import json
+import sys
 import signal
 import hjson
 import pprint
+import numpy as np
 import inspect
+import passivbot_rust as pbr
 import logging
 import math
-import re
-from uuid import uuid4
-from copy import deepcopy
-from collections import defaultdict
-from typing import Dict, Iterable, Tuple, List, Optional
-
-import numpy as np
-from sortedcontainers import SortedDict
-from prettytable import PrettyTable
-from ccxt.base.errors import NetworkError, RateLimitExceeded
-
-# fix Crashes on Windows
-from tools.event_loop_policy import set_windows_event_loop_policy
-set_windows_event_loop_policy()
-
-import passivbot_rust as pbr
 from candlestick_manager import CandlestickManager
+from typing import Dict, Iterable, Tuple, List, Optional
 from logging_setup import configure_logging
 from utils import (
     load_markets,
@@ -40,8 +34,22 @@ from utils import (
     format_approved_ignored_coins,
     filter_markets,
     normalize_exchange_name,
-    get_file_mod_ms,
 )
+from prettytable import PrettyTable
+from uuid import uuid4
+from copy import deepcopy
+from collections import defaultdict
+from sortedcontainers import SortedDict
+
+try:
+    import psutil  # type: ignore
+except Exception:
+    psutil = None
+
+try:
+    import resource  # type: ignore
+except Exception:
+    resource = None
 from config_utils import (
     load_config,
     add_arguments_recursively,
@@ -63,7 +71,10 @@ from procedures import (
     get_first_timestamps_unified,
     print_async_exception,
 )
+from utils import get_file_mod_ms
 from downloader import compute_per_coin_warmup_minutes
+import re
+
 from custom_endpoint_overrides import (
     apply_rest_overrides_to_ccxt,
     configure_custom_endpoint_loader,
@@ -71,16 +82,6 @@ from custom_endpoint_overrides import (
     load_custom_endpoint_config,
     resolve_custom_endpoint_override,
 )
-
-try:
-    import psutil  # type: ignore
-except Exception:
-    psutil = None
-
-try:
-    import resource  # type: ignore
-except Exception:
-    resource = None
 
 
 calc_diff = pbr.calc_diff
@@ -789,10 +790,8 @@ class Passivbot:
 
         await asyncio.gather(*(warm_hour(s) for s in symbols))
 
-    async def update_first_timestamps(self, symbols=None):
+    async def update_first_timestamps(self, symbols=[]):
         """Fetch and cache first trade timestamps for the provided symbols."""
-        if symbols is None:
-            symbols = []
         if not hasattr(self, "first_timestamps"):
             self.first_timestamps = {}
         symbols = sorted(set(symbols + flatten(self.approved_coins_minus_ignored_coins.values())))
@@ -3042,46 +3041,38 @@ def setup_bot(config):
     if user_info["exchange"] == "bybit":
         from exchanges.bybit import BybitBot
 
-        BotClass = BybitBot
+        bot = BybitBot(config)
     elif user_info["exchange"] == "bitget":
         from exchanges.bitget import BitgetBot
 
-        BotClass = BitgetBot
+        bot = BitgetBot(config)
     elif user_info["exchange"] == "binance":
         from exchanges.binance import BinanceBot
 
-        BotClass = BinanceBot
+        bot = BinanceBot(config)
     elif user_info["exchange"] == "okx":
         from exchanges.okx import OKXBot
 
-        BotClass = OKXBot
+        bot = OKXBot(config)
     elif user_info["exchange"] == "hyperliquid":
         from exchanges.hyperliquid import HyperliquidBot
 
-        BotClass = HyperliquidBot
+        bot = HyperliquidBot(config)
     elif user_info["exchange"] == "gateio":
         from exchanges.gateio import GateIOBot
 
-        BotClass = GateIOBot
+        bot = GateIOBot(config)
     elif user_info["exchange"] == "defx":
         from exchanges.defx import DefxBot
 
-        BotClass = DefxBot
+        bot = DefxBot(config)
     elif user_info["exchange"] == "kucoin":
         from exchanges.kucoin import KucoinBot
 
-        BotClass = KucoinBot
+        bot = KucoinBot(config)
     else:
         raise Exception(f"unknown exchange {user_info['exchange']}")
-
-    dry_run = bool(get_optional_config_value(config, "live.dry_run", False))
-    if dry_run:
-        from exchanges.dry_run import DryRunMixin
-
-        logging.warning("[DRY RUN] Paper trading mode active — no real orders will be placed")
-        BotClass = type(f"DryRun{BotClass.__name__}", (DryRunMixin, BotClass), {})
-
-    return BotClass(config)
+    return bot
 
 
 async def shutdown_bot(bot):

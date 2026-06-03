@@ -1,16 +1,5 @@
 import re
 import json
-import aiohttp
-import aiohttp.connector as _aiohttp_connector
-
-# On Windows, aiodns/pycares cannot contact DNS servers via the async resolver.
-# Patch aiohttp to use ThreadedResolver (socket.getaddrinfo in a thread pool)
-# before ccxt is imported so every TCPConnector it creates uses the working resolver.
-import sys as _sys
-
-if _sys.platform == "win32":
-    _aiohttp_connector.DefaultResolver = aiohttp.ThreadedResolver
-
 import ccxt.async_support as ccxt
 import os
 import datetime
@@ -278,6 +267,41 @@ def normalize_exchange_name(exchange: str) -> str:
     return ex
 
 
+def disable_hyperliquid_spot_markets(cc) -> None:
+    """
+    Make a ccxt hyperliquid instance skip loading spot markets.
+
+    Passivbot only trades perpetuals on hyperliquid. ccxt's
+    hyperliquid.fetch_spot_markets raises
+    "unsupported operand type(s) for +: 'NoneType' and 'str'" when the exchange
+    returns a spot token whose name cannot be mapped to a currency code, which
+    crashes load_markets() (called explicitly and implicitly by e.g. fetch_ohlcv).
+
+    Newer ccxt honors options['fetchMarkets']['types'] to choose which market
+    types to load; older pinned versions (e.g. 4.4.99) ignore it and always call
+    fetch_spot_markets. Set the option for newer ccxt AND override the method to a
+    no-op so the buggy spot path never runs regardless of version. Apply to every
+    hyperliquid ccxt instance (sync, async, and pro/websocket).
+    """
+    if getattr(cc, "id", None) != "hyperliquid":
+        return
+    try:
+        fetch_markets_opts = dict(cc.options.get("fetchMarkets") or {})
+        types = list(fetch_markets_opts.get("types") or ["spot", "swap", "hip3"])
+        fetch_markets_opts["types"] = [t for t in types if t != "spot"]
+        cc.options["fetchMarkets"] = fetch_markets_opts
+    except Exception:
+        pass
+
+    async def _skip_spot_markets(params={}):
+        return []
+
+    try:
+        cc.fetch_spot_markets = _skip_spot_markets
+    except Exception:
+        pass
+
+
 def load_ccxt_instance(exchange_id: str, enable_rate_limit: bool = True):
     """
     Return a ccxt async-support exchange instance for the given exchange id.
@@ -293,6 +317,7 @@ def load_ccxt_instance(exchange_id: str, enable_rate_limit: bool = True):
         cc.options["defaultType"] = "swap"
     except Exception:
         pass
+    disable_hyperliquid_spot_markets(cc)
     try:
         override = resolve_custom_endpoint_override(ex)
         apply_rest_overrides_to_ccxt(cc, override)

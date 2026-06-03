@@ -47,7 +47,6 @@ from collections import OrderedDict
 
 import numpy as np
 import portalocker  # type: ignore
-from pure_funcs import safe_filename
 
 
 # ----- Constants and dtypes -----
@@ -204,7 +203,7 @@ def _ts_index(a: np.ndarray) -> np.ndarray:
 
 
 def _sanitize_symbol(symbol: str) -> str:
-    return safe_filename(symbol)
+    return symbol.replace("/", "_")
 
 
 # Parse timeframe string like '1m','5m','1h','1d' to milliseconds.
