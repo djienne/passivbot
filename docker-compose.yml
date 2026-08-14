@@ -6,11 +6,24 @@ services:
     image: passivbot:latest
     container_name: passivbot-hype-live
     restart: unless-stopped
+    stop_grace_period: 30s
+    # Outbound-only bot: reuse the default bridge instead of allocating a new
+    # /24 (this host's Docker address pool is already fully subnetted).
+    network_mode: bridge
+    environment:
+      # Unbuffered stdout so `docker logs -f` streams in real time
+      PYTHONUNBUFFERED: "1"
+      SKIP_RUST_COMPILE: "true"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     deploy:
       resources:
         limits:
-          cpus: '0.2'
-          memory: 300M
+          cpus: '1.0'
+          memory: 1500M
     volumes:
       - ./:/app/
       - ./api-keys.json:/app/api-keys.json
