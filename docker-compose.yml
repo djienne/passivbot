@@ -10,6 +10,16 @@ services:
     # Outbound-only bot: reuse the default bridge instead of allocating a new
     # /24 (this host's Docker address pool is already fully subnetted).
     network_mode: bridge
+    # The default bridge hands the container Docker Desktop's VM resolver as its
+    # only nameserver; ccxt resolves via aiodns (c-ares), which has no fallback
+    # and raises ExchangeNotAvailable the moment that one server stalls. Give it
+    # public resolvers and a short timeout so a stall costs 2s, not a cycle.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    dns_opt:
+      - timeout:2
+      - attempts:3
     environment:
       # Unbuffered stdout so `docker logs -f` streams in real time
       PYTHONUNBUFFERED: "1"
