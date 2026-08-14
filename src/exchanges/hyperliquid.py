@@ -14,6 +14,7 @@ from utils import (
     coin_to_symbol,
     utc_ms,
     disable_hyperliquid_spot_markets,
+    harden_aiohttp_dns,
 )
 from config_utils import require_live_value
 from pure_funcs import (
@@ -51,6 +52,8 @@ class HyperliquidBot(Passivbot):
         self.custom_id_max_length = 34
 
     def create_ccxt_sessions(self):
+        # Must run before ccxt builds any TCPConnector/session below.
+        harden_aiohttp_dns()
         creds = {
             "walletAddress": self.user_info["wallet_address"],
             "privateKey": self.user_info["private_key"],

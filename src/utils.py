@@ -302,6 +302,55 @@ def disable_hyperliquid_spot_markets(cc) -> None:
         pass
 
 
+_aiohttp_dns_hardened = False
+
+
+def harden_aiohttp_dns(ttl_dns_cache: int = 300) -> None:
+    """
+    Make ccxt's aiohttp sessions tolerate a briefly unavailable DNS resolver.
+
+    ccxt builds its TCPConnector with stock defaults, which means two things
+    work against a bot that must stay connected for weeks:
+
+    1. aiohttp picks AsyncResolver (c-ares via aiodns) whenever aiodns is
+       installed. c-ares queries one server at a time, ignores /etc/hosts, and
+       surfaces a stalled resolver as an immediate DNSError instead of retrying
+       the way glibc does. ThreadedResolver goes through getaddrinfo, which
+       honors every nameserver and the `options timeout:/attempts:` in
+       resolv.conf.
+    2. ttl_dns_cache defaults to 10 seconds, so the bot re-resolves the exchange
+       host several times a minute and is exposed to a resolver hiccup almost
+       continuously. A 5-minute TTL keeps a known-good address through the kind
+       of 1-2 minute blip seen on hosts running many containers behind one NAT.
+
+    Idempotent and best-effort: if aiohttp's internals ever move, the bot keeps
+    running on stock behaviour rather than failing to start.
+    """
+    global _aiohttp_dns_hardened
+    if _aiohttp_dns_hardened:
+        return
+    try:
+        import aiohttp
+        import aiohttp.connector
+
+        aiohttp.connector.DefaultResolver = aiohttp.ThreadedResolver
+
+        base_tcp_connector = aiohttp.TCPConnector
+
+        class _LongDnsCacheTCPConnector(base_tcp_connector):
+            def __init__(self, *args, **kwargs):
+                kwargs.setdefault("ttl_dns_cache", ttl_dns_cache)
+                super().__init__(*args, **kwargs)
+
+        aiohttp.TCPConnector = _LongDnsCacheTCPConnector
+        _aiohttp_dns_hardened = True
+        logging.info(
+            f"aiohttp DNS hardened: ThreadedResolver, ttl_dns_cache={ttl_dns_cache}s"
+        )
+    except Exception as e:
+        logging.warning(f"could not harden aiohttp DNS, using stock behaviour: {e}")
+
+
 def load_ccxt_instance(exchange_id: str, enable_rate_limit: bool = True):
     """
     Return a ccxt async-support exchange instance for the given exchange id.
