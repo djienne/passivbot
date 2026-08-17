@@ -17,7 +17,7 @@ strategy theory, backtesting and optimiser docs, go upstream — none of that is
 | image | `passivbot:latest`, built from `Dockerfile_live` |
 | command | `python src/main.py configs/config_hype.json` |
 | config | `configs/config_hype.json` — long-only **HYPE**, api-keys user `hyperliquid_01` |
-| limits | 0.25 CPU / 1500 MB, json-file logs capped at 5 x 20 MB |
+| limits | 0.1 CPU / 1500 MB, json-file logs capped at 5 x 20 MB |
 
 The repo root is bind-mounted at `/app`, so editing a config on the host and restarting the
 container is enough — no rebuild needed. `SKIP_RUST_COMPILE=true` is set because the Rust
